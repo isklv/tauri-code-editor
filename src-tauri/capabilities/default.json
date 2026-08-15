@@ -1,0 +1,23 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Code Editor",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "shell:allow-execute",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-read-dir",
+    "fs:allow-copy-file",
+    "fs:allow-mkdir",
+    "fs:allow-remove",
+    "fs:allow-rename",
+    "fs:allow-write-text-file",
+    "fs:allow-read-text-file",
+    "fs:allow-exists",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "notification:default"
+  ]
+}
