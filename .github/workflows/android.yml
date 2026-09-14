@@ -152,7 +152,23 @@ jobs:
           path: ${{ env.APK_PATH }}
           if-no-files-found: error
 
-      - name: Attach the APK to the release
+      # Actions artifacts are zipped and need a logged-in GitHub session, which
+      # makes them awkward to fetch on the phone the APK is meant for. A release
+      # asset is a direct download, so every green build on main refreshes a
+      # rolling `latest` prerelease.
+      - name: Publish the rolling prerelease
+        if: github.ref == 'refs/heads/main' && steps.signing.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
+          gh release create latest "$APK_PATH" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Latest build" \
+            --notes "Automatic build of ${GITHUB_SHA:0:7}. Install with \`adb install -r\` or open this page on the phone and tap the APK."
+
+      - name: Attach the APK to the tagged release
         if: github.ref_type == 'tag' && steps.signing.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,3 +176,30 @@ jobs:
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --generate-notes
           gh release upload "$GITHUB_REF_NAME" "$APK_PATH" --clobber
+
+      # Android refuses to install an APK with no signature — the installer just
+      # says "App not installed" — so say plainly which kind this run produced.
+      - name: Report what was built
+        if: always()
+        run: |
+          {
+            echo "## APK"
+            echo
+            if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+              echo "Signed and installable."
+              if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+                echo
+                echo "Direct download: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/latest"
+              fi
+            else
+              echo "**Unsigned — Android will refuse to install this APK.**"
+              echo "The installer reports \`App not installed\` because an unsigned"
+              echo "package has no certificate at all."
+              echo
+              echo "Add the four signing secrets to fix it; \`scripts/github-secrets.sh\`"
+              echo "prints the values. See the README for details."
+            fi
+            echo
+            echo "Note that an artifact downloaded from the Actions tab arrives as a"
+            echo "\`.zip\` and has to be unpacked before installing."
+          } >> "$GITHUB_STEP_SUMMARY"
