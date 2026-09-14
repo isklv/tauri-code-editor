@@ -88,6 +88,7 @@ jobs:
       - run: npm ci
 
       - name: Configure release signing
+        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -96,6 +97,7 @@ jobs:
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
             echo "::warning::ANDROID_KEYSTORE_BASE64 is not set — the APK will be unsigned."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           keystore="${RUNNER_TEMP}/release.jks"
@@ -107,18 +109,36 @@ jobs:
             printf 'keyAlias=%s\n' "$KEY_ALIAS"
             printf 'keyPassword=%s\n' "$KEY_PASSWORD"
           } > src-tauri/gen/android/keystore.properties
+          echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Build APK
         run: npx tauri android build --apk ${{ steps.targets.outputs.tauri }}
 
-      - name: Verify the APK is signed
+      - name: Locate the APK
         run: |
-          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' | head -1)
+          outputs=src-tauri/gen/android/app/build/outputs/apk
+          # An unsigned release build is named `...-release-unsigned.apk`, so
+          # match both spellings — looking only for `*-release.apk` finds
+          # nothing when no signing secrets are configured.
+          apk=$(find "$outputs" -name '*release*.apk' | sort | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::No release APK under $outputs"
+            find "$outputs" -type f -printf '%P\n' 2>/dev/null || true
+            exit 1
+          fi
           echo "APK_PATH=$apk" >> "$GITHUB_ENV"
           ls -lh "$apk"
-          if [ -f src-tauri/gen/android/keystore.properties ]; then
-            "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" verify --verbose "$apk"
-          fi
+
+      - name: Verify the signature
+        if: steps.signing.outputs.signed == 'true'
+        run: |
+          case "$APK_PATH" in
+            *-unsigned.apk)
+              echo "::error::Signing secrets are set but Gradle produced an unsigned APK — check that the secrets decode to a valid keystore."
+              exit 1
+              ;;
+          esac
+          "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" verify --verbose "$APK_PATH"
 
       - name: Remove signing material
         if: always()
@@ -126,12 +146,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: code-editor-apk
+          # The name says which one you are downloading, so an unsigned build
+          # from a secretless run cannot be mistaken for a releasable APK.
+          name: code-editor-apk${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}
           path: ${{ env.APK_PATH }}
           if-no-files-found: error
 
       - name: Attach the APK to the release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && steps.signing.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
