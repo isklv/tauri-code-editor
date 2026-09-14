@@ -3,19 +3,25 @@ name = "tauri-code-editor"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "tauri_code_editor"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-shell = "2"
-tauri-plugin-fs = "2"
+tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
-tokio = { version = "1", features = ["full"] }
-
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+portable-pty = "0.9"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+# Smaller binaries matter on Android, where the native library ships inside the APK.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

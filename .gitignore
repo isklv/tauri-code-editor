@@ -1,5 +1,19 @@
 node_modules/
 dist/
-src-tauri/target/
 *.log
 .DS_Store
+
+# Rust / Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Android build output (the generated project itself is committed)
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/build/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/app/.cxx/
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/.idea/
+src-tauri/gen/android/keystore.properties
+*.jks
+*.keystore

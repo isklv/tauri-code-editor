@@ -1,7 +1,8 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Code Editor",
   "version": "0.1.0",
-  "identifier": "dev.codeeditor.app",
+  "identifier": "dev.codeeditor.ide",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -14,6 +15,8 @@
         "title": "Code Editor",
         "width": 1200,
         "height": 800,
+        "minWidth": 600,
+        "minHeight": 400,
         "resizable": true,
         "fullscreen": false
       }
@@ -32,13 +35,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "shell": {
-      "open": true,
-      "execute": true,
-      "sidecar": true,
-      "argv": []
-    }
   }
 }
