@@ -1,296 +1,521 @@
-import * as monaco from 'monaco-editor';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import 'monaco-editor/min/vs/editor/editor.main.css';
-import '@xterm/xterm/css/xterm.css';
+import './style.css';
 
-// ── State ──
-const state = {
-  files: new Map(),
-  activeFile: null,
-  editor: null,
-  terminal: null,
-};
+import * as api from './api.js';
+import { askConfirm, askFolder, askText } from './dialog.js';
+import { showMenu } from './contextmenu.js';
+import { openPalette } from './palette.js';
+import { createEditor, createModel } from './editor.js';
+import { FileTree } from './filetree.js';
+import { TerminalPanel } from './terminal.js';
 
-// ── DOM setup ──
-const root = document.getElementById('root');
+// ── Layout ──
 
-root.innerHTML = `
-  <div style="display:flex;height:100vh;">
-    <!-- Sidebar -->
-    <div id="sidebar" style="width:250px;background:#252526;border-right:1px solid #3c3c3c;display:flex;flex-direction:column;overflow:hidden;">
-      <div style="padding:10px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#858585;user-select:none;">
-        Explorer
+document.getElementById('app').innerHTML = `
+  <div class="workbench">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="title" id="root-name">Explorer</span>
+        <button class="icon-button" id="btn-up" title="Go to parent folder">↑</button>
+        <button class="icon-button" id="btn-new-file" title="New file">＋</button>
+        <button class="icon-button" id="btn-refresh" title="Refresh">⟳</button>
       </div>
-      <div id="file-tree" style="flex:1;overflow-y:auto;padding:0 10px;"></div>
-    </div>
+      <div class="sidebar-path" id="root-path"></div>
+      <div class="file-tree" id="file-tree"></div>
+    </aside>
+    <div class="resizer-v" id="resizer-sidebar"></div>
+    <div class="scrim" id="scrim"></div>
 
-    <!-- Main area -->
-    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-      <!-- Tab bar -->
-      <div style="height:35px;background:#2d2d2d;display:flex;align-items:center;border-bottom:1px solid #3c3c3c;overflow-x:auto;">
-        <div id="tabs" style="display:flex;height:100%;"></div>
+    <main class="main">
+      <div class="toolbar" id="toolbar">
+        <button class="tool" id="btn-menu" title="Toggle explorer (Ctrl+B)">☰</button>
+        <button class="tool" id="btn-open">Open Folder</button>
+        <button class="tool" id="btn-save">Save</button>
+        <button class="tool" id="btn-goto">Go to File</button>
+        <button class="tool" id="btn-toggle-terminal">Terminal</button>
       </div>
-
-      <!-- Editor + Terminal split -->
-      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-        <div id="editor-container" style="flex:1;min-height:100px;"></div>
-        <div id="terminal-container" style="height:200px;border-top:1px solid #3c3c3c;display:flex;flex-direction:column;">
-          <div style="display:flex;align-items:center;padding:4px 10px;background:#2d2d2d;">
-            <span style="font-size:11px;color:#858585;">TERMINAL</span>
-            <button id="terminal-close" style="margin-left:auto;background:none;border:none;color:#858585;cursor:pointer;font-size:16px;">×</button>
-          </div>
-          <div id="terminal" style="flex:1;padding:4px;overflow:hidden;"></div>
+      <div class="tabbar" id="tabbar"></div>
+      <div class="editor" id="editor"></div>
+      <div class="resizer-h" id="resizer-panel"></div>
+      <section class="panel" id="panel">
+        <div class="panel-header">
+          <span>Terminal</span>
+          <span class="spacer"></span>
+          <button class="icon-button" id="btn-term-keys" title="Toggle on-screen keys">⌨</button>
+          <button class="icon-button" id="btn-restart-terminal" title="Restart shell">⟳</button>
+          <button class="icon-button" id="btn-close-terminal" title="Hide terminal">×</button>
         </div>
-      </div>
-    </div>
+        <div class="terminal-host" id="terminal"></div>
+        <div class="term-keys" id="term-keys"></div>
+      </section>
+    </main>
   </div>
 
-  <!-- Status bar -->
-  <div style="height:22px;background:#007acc;display:flex;align-items:center;padding:0 10px;font-size:12px;color:white;user-select:none;">
-    <span id="status-left">Ready</span>
-    <span style="margin-left:auto;">Code Editor</span>
-  </div>
+  <footer class="statusbar">
+    <span class="message" id="status-message">Ready</span>
+    <span class="spacer"></span>
+    <span id="status-position"></span>
+    <span id="status-language"></span>
+  </footer>
 `;
 
-// ── File Tree ──
-async function loadFileTree(path) {
-  const tree = document.getElementById('file-tree');
-  try {
-    let entries;
-    if (window.__TAURI__) {
-      const { readDir } = await import('@tauri-apps/plugin-fs');
-      entries = await readDir(path || '/', { baseDir: 'home' });
-    } else {
-      // Demo mode — show fake files
-      entries = [
-        { name: 'src', isDirectory: true },
-        { name: 'package.json', isDirectory: false },
-        { name: 'Cargo.toml', isDirectory: false },
-        { name: 'README.md', isDirectory: false },
-      ];
-    }
-    tree.innerHTML = entries
-      .map(e => {
-        const icon = e.isDirectory ? '📁' : '📄';
-        return `<div style="padding:3px 8px;cursor:pointer;border-radius:3px;font-size:13px;"
-          data-path="${path ? path + '/' : ''}${e.name}" data-dir="${e.isDirectory}"
-          onmouseover="this.style.background='#2a2d2e'"
-          onmouseout="this.style.background='transparent'"
-          onclick="handleFileClick(this)">${icon} ${e.name}</div>`;
-      })
-      .join('');
-  } catch (err) {
-    tree.innerHTML = `<div style="color:#f48771;font-size:12px;">Cannot read: ${path}</div>`;
-  }
+const $ = (id) => document.getElementById(id);
+
+// ── State ──
+
+/** @type {Map<string, {model: any, viewState: any, saved: string}>} */
+const openFiles = new Map();
+let activePath = null;
+let rootPath = null;
+let statusTimer = null;
+
+const editor = createEditor($('editor'));
+const terminal = new TerminalPanel($('terminal'), $('term-keys'));
+const tree = new FileTree($('file-tree'), {
+  onOpenFile: async (path) => {
+    await openFile(path);
+    if (isNarrow()) setSidebar(false);
+  },
+  onError: (msg) => setStatus(msg, true),
+  onContextMenu: (entry, x, y) => showEntryMenu(entry, x, y),
+});
+
+// ── Status bar ──
+
+function setStatus(message, isError = false, resetAfter = isError ? 6000 : 2500) {
+  const el = $('status-message');
+  el.textContent = message;
+  el.classList.toggle('error', isError);
+  clearTimeout(statusTimer);
+  if (resetAfter) statusTimer = setTimeout(() => updateStatus(), resetAfter);
 }
 
-window.handleFileClick = async function(el) {
-  const path = el.dataset.path;
-  const isDir = el.dataset.dir === 'true';
-  if (isDir) {
-    loadFileTree(path);
-  } else {
-    openFile(path);
-  }
-};
+function updateStatus() {
+  const el = $('status-message');
+  el.classList.remove('error');
+  el.textContent = activePath ?? (rootPath ? 'No file open' : 'Open a folder to start');
+  const model = activePath ? editor.getModel() : null;
+  $('status-language').textContent = model ? model.getLanguageId() : '';
+  if (!activePath) $('status-position').textContent = '';
+}
 
-// ── Editor ──
+editor.onDidChangeCursorPosition((e) => {
+  $('status-position').textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
+});
+
+// ── Files ──
+
 async function openFile(path) {
   try {
-    let content;
-    if (window.__TAURI__) {
-      const { readTextFile } = await import('@tauri-apps/plugin-fs');
-      content = await readTextFile(path, { baseDir: 'home' });
-    } else {
-      // Demo content
-      content = `// ${path}\n// Demo content\nconsole.log('Hello from ${path}');`;
+    if (!openFiles.has(path)) {
+      const content = await api.readFile(path);
+      openFiles.set(path, { model: createModel(content, path), viewState: null, saved: content });
+      openFiles.get(path).model.onDidChangeContent(() => renderTabs());
     }
-    state.files.set(path, content);
-    state.activeFile = path;
-
-    if (state.editor) {
-      const ext = path.split('.').pop().toLowerCase();
-      const langMap = {
-        js: 'javascript', ts: 'typescript', py: 'python',
-        go: 'go', rs: 'rust', rb: 'ruby', java: 'java',
-        c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
-        html: 'html', css: 'css', json: 'json',
-        md: 'markdown', sh: 'shell', yaml: 'yaml', yml: 'yaml',
-        toml: 'toml', sql: 'sql',
-      };
-      const lang = langMap[ext] || 'plaintext';
-      const model = monaco.editor.createModel(content, lang);
-      state.editor.setModel(model);
-    }
-
-    updateTabs();
-    updateStatus(path);
-  } catch (err) {
-    document.getElementById('status-left').textContent = `Error: ${err.message}`;
+    activate(path);
+  } catch (e) {
+    setStatus(`Cannot open ${api.basename(path)}: ${e}`, true);
   }
 }
 
-// ── Monaco Editor ──
-function initEditor() {
-  const container = document.getElementById('editor-container');
-
-  state.editor = monaco.editor.create(container, {
-    value: '// Welcome to Code Editor for Android\n// Open a file from the sidebar to start coding\n',
-    language: 'plaintext',
-    theme: 'vs-dark',
-    fontSize: 14,
-    minimap: { enabled: true },
-    scrollBeyondLastLine: false,
-    automaticLayout: true,
-    tabSize: 2,
-    wordWrap: 'on',
-    renderWhitespace: 'selection',
-  });
-
-  // Save on Ctrl+S
-  state.editor.onKeyDown((e) => {
-    if ((e.ctrlKey || e.metaKey) && e.keyCode === 83) {
-      e.preventDefault();
-      saveFile();
-    }
-  });
+function activate(path) {
+  if (activePath && openFiles.has(activePath)) {
+    openFiles.get(activePath).viewState = editor.saveViewState();
+  }
+  const entry = openFiles.get(path);
+  if (!entry) return;
+  activePath = path;
+  editor.setModel(entry.model);
+  if (entry.viewState) editor.restoreViewState(entry.viewState);
+  editor.focus();
+  tree.setActive(path);
+  renderTabs();
+  updateStatus();
 }
 
-async function saveFile() {
-  if (!state.activeFile) return;
-  const content = state.editor.getValue();
+function isDirty(path) {
+  const entry = openFiles.get(path);
+  return entry ? entry.model.getValue() !== entry.saved : false;
+}
+
+async function saveFile(path = activePath) {
+  if (!path) return;
+  const entry = openFiles.get(path);
+  if (!entry) return;
+  const content = entry.model.getValue();
   try {
-    if (window.__TAURI__) {
-      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-      await writeTextFile(state.activeFile, content, { baseDir: 'home' });
+    await api.writeFile(path, content);
+    entry.saved = content;
+    renderTabs();
+    setStatus(`Saved ${api.basename(path)}`);
+  } catch (e) {
+    setStatus(`Save failed: ${e}`, true);
+  }
+}
+
+async function closeFile(path) {
+  if (isDirty(path)) {
+    const discard = await askConfirm(
+      `${api.basename(path)} has unsaved changes. Close without saving?`,
+      'Discard',
+    );
+    if (!discard) return;
+  }
+  const entry = openFiles.get(path);
+  entry?.model.dispose();
+  openFiles.delete(path);
+
+  if (activePath === path) {
+    activePath = null;
+    const next = [...openFiles.keys()].pop();
+    if (next) activate(next);
+    else {
+      editor.setModel(null);
+      tree.setActive(null);
+      renderTabs();
+      updateStatus();
     }
-    state.files.set(state.activeFile, content);
-    document.getElementById('status-left').textContent = `Saved: ${state.activeFile}`;
-    setTimeout(() => {
-      document.getElementById('status-left').textContent = 'Ready';
-    }, 2000);
-  } catch (err) {
-    document.getElementById('status-left').textContent = `Save error: ${err.message}`;
+  } else {
+    renderTabs();
   }
 }
 
 // ── Tabs ──
-function updateTabs() {
-  const tabs = document.getElementById('tabs');
-  tabs.innerHTML = '';
-  state.files.forEach((_, path) => {
-    const isActive = path === state.activeFile;
-    const name = path.split('/').pop();
+
+function renderTabs() {
+  const bar = $('tabbar');
+  bar.textContent = '';
+  for (const path of openFiles.keys()) {
     const tab = document.createElement('div');
-    tab.style.cssText = `
-      padding: 6px 12px; font-size: 12px; cursor: pointer;
-      background: ${isActive ? '#1e1e1e' : '#2d2d2d'};
-      color: ${isActive ? '#e0e0e0' : '#969696'};
-      border-right: 1px solid #3c3c3c;
-      display: flex; align-items: center; gap: 6px;
-      white-space: nowrap;
-    `;
-    tab.innerHTML = `<span>${name}</span><span style="font-size:14px;margin-left:4px;opacity:0.5;">×</span>`;
-    tab.onclick = () => {
-      state.activeFile = path;
-      const content = state.files.get(path) || '';
-      state.editor.setValue(content);
-      updateTabs();
-      updateStatus(path);
-    };
-    tabs.appendChild(tab);
-  });
+    tab.className = 'tab';
+    if (path === activePath) tab.classList.add('active');
+    if (isDirty(path)) tab.classList.add('dirty');
+    tab.title = path;
+
+    const name = document.createElement('span');
+    name.textContent = api.basename(path);
+    tab.appendChild(name);
+
+    const close = document.createElement('span');
+    close.className = 'close';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeFile(path);
+    });
+    tab.appendChild(close);
+
+    tab.addEventListener('click', () => activate(path));
+    bar.appendChild(tab);
+  }
 }
 
-function updateStatus(path) {
-  const name = path ? path.split('/').pop() : 'No file';
-  const lang = state.editor?.getModel()?.getLanguageId() || 'plaintext';
-  document.getElementById('status-left').textContent = `${name} — ${lang}`;
+/** Move `step` tabs along the open list, wrapping around. */
+function cycleTab(step) {
+  const paths = [...openFiles.keys()];
+  if (paths.length < 2) return;
+  const current = paths.indexOf(activePath);
+  activate(paths[(current + step + paths.length) % paths.length]);
 }
 
-// ── Terminal ──
-function initTerminal() {
-  const term = new Terminal({
-    cursorBlink: true,
-    fontSize: 13,
-    fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
-    theme: {
-      background: '#1e1e1e',
-      foreground: '#cccccc',
-      cursor: '#aeafad',
-      selectionBackground: '#264f78',
-      black: '#000000',
-      red: '#cd3131',
-      green: '#0dbc79',
-      yellow: '#e5e510',
-      blue: '#2472c3',
-      magenta: '#bc3fbc',
-      cyan: '#11a8cd',
-      white: '#e5e5e5',
-      brightBlack: '#666666',
-      brightRed: '#f14c4c',
-      brightGreen: '#23d18b',
-      brightYellow: '#f5f543',
-      brightBlue: '#3b8eea',
-      brightMagenta: '#d670d6',
-      brightCyan: '#29b8db',
-      brightWhite: '#ffffff',
-    },
-  });
+// ── Folder ──
 
-  const fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  term.loadAddon(new WebLinksAddon());
+async function openFolder(path) {
+  try {
+    await tree.setRoot(path);
+  } catch (e) {
+    setStatus(`Cannot open ${path}: ${e}`, true);
+    return false;
+  }
+  rootPath = path;
+  $('root-name').textContent = api.basename(path) || path;
+  $('root-path').textContent = path;
+  $('root-path').title = path;
+  if (activePath) tree.setActive(activePath);
+  updateStatus();
+  return true;
+}
 
-  const container = document.getElementById('terminal');
-  term.open(container);
+// ── File operations ──
 
-  // Delay fit to ensure container is rendered
-  setTimeout(() => fitAddon.fit(), 100);
+async function createEntryUnder(dir) {
+  const name = await askText('New name (end with / to create a folder):');
+  if (!name) return;
+  const path = api.join(dir, name);
+  try {
+    await api.createEntry(path, name.endsWith('/'));
+    await tree.refresh();
+    if (!name.endsWith('/')) await openFile(path);
+  } catch (e) {
+    setStatus(`Cannot create ${name}: ${e}`, true);
+  }
+}
 
-  state.terminal = term;
+async function renameEntry(entry) {
+  const name = await askText(`Rename ${api.basename(entry.path)} to:`, api.basename(entry.path));
+  if (!name || name === api.basename(entry.path)) return;
+  const target = api.join(api.dirname(entry.path), name);
+  try {
+    await api.renameEntry(entry.path, target);
+    // An open tab still points at the old path, so move it across.
+    if (openFiles.has(entry.path)) {
+      const open = openFiles.get(entry.path);
+      openFiles.delete(entry.path);
+      openFiles.set(target, open);
+      if (activePath === entry.path) activePath = target;
+    }
+    await tree.refresh();
+    renderTabs();
+    updateStatus();
+  } catch (e) {
+    setStatus(`Cannot rename: ${e}`, true);
+  }
+}
 
-  // Resize handler
-  const resizeObserver = new ResizeObserver(() => fitAddon.fit());
-  resizeObserver.observe(container);
+async function deleteEntry(entry) {
+  const kind = entry.is_dir ? 'folder and everything in it' : 'file';
+  const confirmed = await askConfirm(`Delete ${api.basename(entry.path)}? This ${kind} cannot be recovered.`, 'Delete');
+  if (!confirmed) return;
+  try {
+    await api.deleteEntry(entry.path);
+    for (const path of [...openFiles.keys()]) {
+      if (path === entry.path || path.startsWith(entry.path + '/')) {
+        openFiles.get(path).model.dispose();
+        openFiles.delete(path);
+        if (activePath === path) activePath = null;
+      }
+    }
+    if (!activePath) {
+      const next = [...openFiles.keys()].pop();
+      if (next) activate(next);
+      else editor.setModel(null);
+    }
+    await tree.refresh();
+    renderTabs();
+    updateStatus();
+  } catch (e) {
+    setStatus(`Cannot delete: ${e}`, true);
+  }
+}
 
-  // Toggle terminal
-  document.getElementById('terminal-close').onclick = () => {
-    const tc = document.getElementById('terminal-container');
-    tc.style.display = tc.style.display === 'none' ? 'flex' : 'none';
-    setTimeout(() => fitAddon.fit(), 50);
+function showEntryMenu(entry, x, y) {
+  const parent = entry.is_dir ? entry.path : api.dirname(entry.path);
+  showMenu(x, y, [
+    entry.is_dir
+      ? { label: 'Open as root', action: () => openFolder(entry.path) }
+      : { label: 'Open', action: () => openFile(entry.path) },
+    { label: 'New file / folder here…', action: () => createEntryUnder(parent) },
+    { separator: true },
+    { label: 'Rename…', action: () => renameEntry(entry) },
+    { label: 'Copy path', action: () => copyText(entry.path) },
+    { separator: true },
+    { label: 'Delete…', action: () => deleteEntry(entry), danger: true },
+  ]);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus('Path copied');
+  } catch {
+    setStatus('Clipboard is not available', true);
+  }
+}
+
+// ── Toolbar / commands ──
+
+async function chooseFolder() {
+  // The native picker only returns real paths on desktop; elsewhere the app
+  // offers its own list of roots plus a typed path.
+  const picked = api.hasNativeFolderPicker
+    ? await api.pickFolder(rootPath ?? undefined)
+    : await askFolder(await api.quickRoots(), rootPath ?? '');
+  if (!picked) return;
+  await openFolder(picked);
+  await terminal.restart(picked);
+}
+
+$('btn-open').addEventListener('click', chooseFolder);
+
+$('btn-up').addEventListener('click', async () => {
+  if (!rootPath) return;
+  const parent = api.dirname(rootPath);
+  if (parent === rootPath) return;
+  await openFolder(parent);
+});
+
+$('btn-save').addEventListener('click', () => saveFile());
+$('btn-goto').addEventListener('click', () => quickOpen());
+$('btn-refresh').addEventListener('click', () => tree.refresh());
+
+$('btn-new-file').addEventListener('click', () => {
+  if (!rootPath) return setStatus('Open a folder first', true);
+  createEntryUnder(rootPath);
+});
+
+/** Phones get the explorer as an overlay drawer, desktops as a fixed column. */
+const isNarrow = () => window.matchMedia('(max-width: 700px)').matches;
+
+function setSidebar(open) {
+  document.body.classList.toggle('sidebar-open', open);
+  if (!open) editor.focus();
+}
+
+$('btn-menu').addEventListener('click', () => setSidebar(!document.body.classList.contains('sidebar-open')));
+$('scrim').addEventListener('click', () => setSidebar(false));
+
+function toggleTerminal(force) {
+  const panel = $('panel');
+  const resizer = $('resizer-panel');
+  const hide = force ?? !panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', hide);
+  resizer.classList.toggle('hidden', hide);
+  if (!hide) {
+    terminal.fit();
+    terminal.focus();
+  } else {
+    editor.focus();
+  }
+}
+
+$('btn-toggle-terminal').addEventListener('click', () => toggleTerminal());
+$('btn-close-terminal').addEventListener('click', () => toggleTerminal(true));
+$('btn-restart-terminal').addEventListener('click', () => terminal.restart(rootPath));
+
+// The helper key row is for soft keyboards; a DeX or desktop keyboard has all
+// these keys already, so it starts hidden there.
+const isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+$('term-keys').classList.toggle('visible', isTouchDevice);
+$('btn-term-keys').addEventListener('click', () => {
+  $('term-keys').classList.toggle('visible');
+  terminal.fit();
+});
+
+// ── Keyboard ──
+
+window.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  // Ctrl+S/W/P/N inside the terminal belong to the shell (XOFF, kill-word,
+  // previous/next history), so only the app-wide chords are taken there.
+  const inTerminal = $('terminal').contains(e.target);
+
+  const handlers = {
+    '`': () => toggleTerminal(),
+    b: () => setSidebar(!document.body.classList.contains('sidebar-open')),
+    Tab: () => cycleTab(e.shiftKey ? -1 : 1),
+  };
+  const editorHandlers = {
+    s: () => saveFile(),
+    w: () => activePath && closeFile(activePath),
+    p: () => quickOpen(),
+    n: () => rootPath && createEntryUnder(rootPath),
   };
 
-  // Send keystrokes to terminal via Rust backend
-  term.onData((data) => {
-    if (window.__TAURI__) {
-      // In Tauri, we'll send to the Rust backend
-      import('@tauri-apps/plugin-shell').then(({ invoke }) => {
-        invoke('write_terminal', { data }).catch(() => {});
-      }).catch(() => {
-        // Demo mode — echo back
-        term.write(`\r\n[echo] ${data.replace(/\n/g, '')}`);
-      });
-    } else {
-      // Demo mode — echo back
-      term.write(`\r\n[echo] ${data.replace(/\n/g, '')}`);
-    }
-  });
+  const handler = handlers[e.key] ?? (inTerminal ? undefined : editorHandlers[e.key]);
+  if (handler) {
+    e.preventDefault();
+    handler();
+  }
+});
 
-  // Welcome message
-  term.writeln('\x1b[32mWelcome to Code Editor Terminal\x1b[0m');
-  term.writeln('\x1b[90mType "help" for available commands\x1b[0m');
-  term.writeln('');
+async function quickOpen() {
+  if (!rootPath) return setStatus('Open a folder first', true);
+  const picked = await openPalette(rootPath);
+  if (picked) await openFile(picked);
 }
 
-// ── Init ──
+// Keep the app-level chords for the app instead of forwarding them to the shell.
+terminal.term.attachCustomKeyEventHandler((e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  return !(mod && (e.key === '`' || e.key === 'b' || e.key === 'Tab'));
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if ([...openFiles.keys()].some(isDirty)) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+// ── Drag-to-resize ──
+
+function makeResizer(handle, apply) {
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const move = (ev) => apply(ev);
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
+}
+
+makeResizer($('resizer-sidebar'), (e) => {
+  const width = Math.min(Math.max(e.clientX, 150), window.innerWidth * 0.6);
+  $('sidebar').style.width = `${width}px`;
+});
+
+makeResizer($('resizer-panel'), (e) => {
+  const workbench = document.querySelector('.workbench').getBoundingClientRect();
+  const height = Math.min(Math.max(workbench.bottom - e.clientY, 60), maxPanelHeight());
+  $('panel').style.height = `${height}px`;
+  terminal.fit();
+});
+
+// ── Window resizing ──
+//
+// A Samsung DeX or desktop window can be resized to any size at any moment;
+// the panel and sidebar keep pixel sizes from dragging, so clamp them back
+// into range whenever the window changes.
+
+/** Tallest the terminal may get while still leaving the editor usable. */
+function maxPanelHeight() {
+  const main = document.querySelector('.main').getBoundingClientRect().height;
+  const chrome = $('toolbar').offsetHeight + $('tabbar').offsetHeight + $('resizer-panel').offsetHeight;
+  const MIN_EDITOR = 120;
+  return Math.max(60, main - chrome - MIN_EDITOR);
+}
+
+function clampLayout() {
+  const panel = $('panel');
+  const maxPanel = maxPanelHeight();
+  if (panel.getBoundingClientRect().height > maxPanel) {
+    panel.style.height = `${maxPanel}px`;
+  }
+
+  const sidebar = $('sidebar');
+  if (isNarrow()) {
+    // The drawer sizes itself in CSS; drop any width left over from dragging.
+    sidebar.style.width = '';
+  } else {
+    const maxSidebar = Math.max(150, window.innerWidth * 0.6);
+    if (sidebar.getBoundingClientRect().width > maxSidebar) {
+      sidebar.style.width = `${maxSidebar}px`;
+    }
+  }
+
+  // The minimap is only worth its width on a roomy window.
+  editor.updateOptions({ minimap: { enabled: window.innerWidth > 900 } });
+  terminal.fit();
+}
+
+window.addEventListener('resize', clampLayout);
+
+// ── Boot ──
+
 async function init() {
-  await loadFileTree('');
-  initEditor();
-  initTerminal();
-  document.getElementById('status-left').textContent = 'Code Editor for Android — Ready';
+  setSidebar(!isNarrow());
+  try {
+    await openFolder(await api.defaultRoot());
+  } catch (e) {
+    setStatus(`Cannot determine a starting folder: ${e}`, true);
+  }
+  await terminal.start(rootPath);
+  renderTabs();
+  updateStatus();
+  clampLayout();
 }
 
 init();

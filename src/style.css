@@ -1,0 +1,702 @@
+:root {
+  --bg: #1e1e1e;
+  --bg-alt: #252526;
+  --bg-tab: #2d2d2d;
+  --border: #3c3c3c;
+  --fg: #d4d4d4;
+  --fg-dim: #858585;
+  --accent: #007acc;
+  --error: #f48771;
+  --hover: #2a2d2e;
+  --select: #37373d;
+  --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+  --mono-font: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--ui-font);
+  font-size: 13px;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  /* Android runs the webview edge-to-edge, so keep the chrome clear of the
+     system status/navigation bars. On desktop these all resolve to 0. */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.workbench {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Scrim behind the sidebar when it floats over the editor on narrow screens. */
+.scrim {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: #00000066;
+  z-index: 40;
+}
+
+/* ── Sidebar ── */
+
+.sidebar {
+  width: 260px;
+  min-width: 150px;
+  max-width: 60vw;
+  background: var(--bg-alt);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+body:not(.sidebar-open) .sidebar,
+body:not(.sidebar-open) .resizer-v {
+  display: none;
+}
+
+/* Phone layout: the sidebar slides over the editor instead of shrinking it. */
+@media (max-width: 700px) {
+  .sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: min(80vw, 320px);
+    max-width: none;
+    box-shadow: 4px 0 16px #00000066;
+  }
+
+  body:not(.sidebar-open) .sidebar {
+    display: flex;
+    transform: translateX(-100%);
+  }
+
+  body.sidebar-open .scrim {
+    display: block;
+  }
+
+  .resizer-v {
+    display: none;
+  }
+
+  .toolbar {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+}
+
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--fg-dim);
+}
+
+.sidebar-header .title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-path {
+  padding: 0 8px 6px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tree {
+  flex: 1;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tree-row:hover {
+  background: var(--hover);
+}
+
+.tree-row.active {
+  background: var(--select);
+}
+
+.tree-row .twisty {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--fg-dim);
+  font-size: 10px;
+  text-align: center;
+}
+
+.tree-row .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-message {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.tree-message.error {
+  color: var(--error);
+}
+
+/* ── Drag handles ── */
+
+.resizer-v {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.resizer-h {
+  height: 4px;
+  cursor: row-resize;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.resizer-v:hover,
+.resizer-h:hover {
+  background: var(--accent);
+}
+
+/* ── Main area ── */
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-tab);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+button.tool {
+  background: #3a3d41;
+  border: 1px solid transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+button.tool:hover {
+  background: #4a4d51;
+}
+
+button.tool:active {
+  background: var(--accent);
+}
+
+.tabbar {
+  display: flex;
+  height: 35px;
+  background: var(--bg-tab);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: #969696;
+  background: var(--bg-tab);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tab:hover {
+  background: #333;
+}
+
+.tab.active {
+  background: var(--bg);
+  color: #e7e7e7;
+}
+
+.tab .close {
+  width: 16px;
+  height: 16px;
+  line-height: 15px;
+  text-align: center;
+  border-radius: 3px;
+  opacity: 0.6;
+  font-size: 14px;
+}
+
+.tab .close:hover {
+  background: #ffffff22;
+  opacity: 1;
+}
+
+.tab.dirty .close::before {
+  content: '●';
+  font-size: 10px;
+}
+
+.tab.dirty .close:hover::before {
+  content: '×';
+  font-size: 14px;
+}
+
+.tab:not(.dirty) .close::before {
+  content: '×';
+}
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Terminal panel ── */
+
+.panel {
+  height: 220px;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.panel.hidden,
+.panel.hidden + .resizer-h,
+.resizer-h.hidden {
+  display: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  background: var(--bg-tab);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.panel-header .spacer {
+  flex: 1;
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.icon-button:hover {
+  background: #ffffff1a;
+  color: var(--fg);
+}
+
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0 4px 6px;
+  overflow: hidden;
+}
+
+/* ── Status bar ── */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  min-height: 22px;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.statusbar .spacer {
+  flex: 1;
+}
+
+.statusbar .message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statusbar .message.error {
+  color: #ffd7d7;
+  font-weight: 600;
+}
+
+/* Monaco needs selectable text even though the chrome around it is not. */
+.editor,
+.terminal-host {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── Modal dialogs ── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #00000080;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  z-index: 100;
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal {
+  background: var(--bg-alt);
+  border: 1px solid #454545;
+  border-radius: 6px;
+  box-shadow: 0 8px 30px #00000080;
+  padding: 16px;
+  width: min(420px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-title {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.modal-input {
+  background: #3c3c3c;
+  border: 1px solid #007acc;
+  border-radius: 3px;
+  color: var(--fg);
+  font: inherit;
+  padding: 6px 8px;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+button.tool.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+button.tool.primary:hover {
+  background: #1b8ad6;
+}
+
+/* ── Touch ──
+   `hover: none` is what separates a finger from a mouse. Samsung DeX reports a
+   real pointer, so it keeps the compact desktop sizing even though the device
+   is a phone. */
+
+@media (hover: none) and (pointer: coarse) {
+  .tree-row {
+    padding-top: 9px;
+    padding-bottom: 9px;
+    font-size: 15px;
+  }
+
+  .tree-row .twisty {
+    width: 20px;
+    font-size: 13px;
+  }
+
+  .tab {
+    padding: 0 14px;
+    font-size: 14px;
+  }
+
+  .tab .close {
+    width: 24px;
+    height: 24px;
+    line-height: 23px;
+  }
+
+  .tabbar {
+    height: 44px;
+  }
+
+  button.tool {
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+
+  .icon-button {
+    padding: 8px 10px;
+    font-size: 17px;
+  }
+
+  .resizer-v {
+    width: 10px;
+  }
+
+  .resizer-h {
+    height: 10px;
+  }
+}
+
+.modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.modal-list-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: #3c3c3c;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--fg);
+  font: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.modal-list-item:hover {
+  background: #4a4d51;
+}
+
+.modal-list-path {
+  font-size: 11px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── Terminal helper keys (soft keyboards have no Esc/Tab/Ctrl/arrows) ── */
+
+.term-keys {
+  display: none;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg-tab);
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.term-keys.visible {
+  display: flex;
+}
+
+.term-key {
+  background: #3a3d41;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: var(--mono-font);
+  font-size: 13px;
+  min-width: 40px;
+  padding: 7px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.term-key:active {
+  background: var(--accent);
+}
+
+.term-key.sticky {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Quick-open palette ── */
+
+.palette-backdrop {
+  padding-top: 10vh;
+}
+
+.palette {
+  width: min(640px, 92vw);
+  gap: 8px;
+}
+
+.palette-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.palette-item.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.palette-item.selected .palette-dir {
+  color: #dbeeff;
+}
+
+.palette-name {
+  flex-shrink: 0;
+}
+
+.palette-dir {
+  font-size: 11px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+/* ── Context menu ── */
+
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 180px;
+  background: #2b2b2b;
+  border: 1px solid #454545;
+  border-radius: 5px;
+  box-shadow: 0 6px 20px #00000080;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu[hidden] {
+  display: none;
+}
+
+.context-item {
+  background: none;
+  border: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.context-item:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.context-item.danger:hover {
+  background: #a1260d;
+}
+
+.context-separator {
+  height: 1px;
+  background: #454545;
+  margin: 4px 2px;
+}
