@@ -1,0 +1,140 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      all_abis:
+        description: 'Build every ABI instead of arm64 only'
+        type: boolean
+        default: false
+
+# Versions are pinned so a CI build matches what is built locally.
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '22'
+  ANDROID_PLATFORM: '36'
+  ANDROID_BUILD_TOOLS: '36.1.0'
+  ANDROID_NDK_VERSION: '27.3.13750724'
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed only to attach the APK to a tagged release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          sdkmanager --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK_VERSION}"
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Select Rust targets
+        id: targets
+        run: |
+          # Every current Android device is arm64; the other ABIs are only worth
+          # the extra compile time for a tagged release or an explicit request.
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ inputs.all_abis }}" = "true" ]; then
+            echo "rust=aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android" >> "$GITHUB_OUTPUT"
+            echo "tauri=" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=aarch64-linux-android" >> "$GITHUB_OUTPUT"
+            echo "tauri=--target aarch64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust targets
+        run: rustup target add ${{ steps.targets.outputs.rust }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: cargo-android-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ steps.targets.outputs.rust }}
+          restore-keys: cargo-android-${{ hashFiles('src-tauri/Cargo.lock') }}-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - run: npm ci
+
+      - name: Configure release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set — the APK will be unsigned."
+            exit 0
+          fi
+          keystore="${RUNNER_TEMP}/release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          # Written with a heredoc so the secrets never appear in the command line.
+          {
+            printf 'storeFile=%s\n' "$keystore"
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+          } > src-tauri/gen/android/keystore.properties
+
+      - name: Build APK
+        run: npx tauri android build --apk ${{ steps.targets.outputs.tauri }}
+
+      - name: Verify the APK is signed
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' | head -1)
+          echo "APK_PATH=$apk" >> "$GITHUB_ENV"
+          ls -lh "$apk"
+          if [ -f src-tauri/gen/android/keystore.properties ]; then
+            "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" verify --verbose "$apk"
+          fi
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f src-tauri/gen/android/keystore.properties "${RUNNER_TEMP}/release.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: code-editor-apk
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
+
+      - name: Attach the APK to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" "$APK_PATH" --clobber
