@@ -130,3 +130,29 @@ fn quick_open_matches_subsequences_and_skips_heavy_directories() {
     let sorted = tauri_code_editor::search_files(&dir, "e");
     assert!(sorted[0].ends_with("README.md"), "got {sorted:?}");
 }
+
+#[test]
+fn watching_directory_detects_changes() {
+    use notify::Watcher;
+    let dir = temp_dir("watcher");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+            if let Ok(event) = res {
+                let _ = tx.send(event);
+            }
+        })
+        .unwrap();
+
+    watcher
+        .watch(&dir, notify::RecursiveMode::Recursive)
+        .unwrap();
+
+    let file = dir.join("new_file.txt");
+    fs::write(&file, "hello").unwrap();
+
+    let event = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("did not receive file event");
+    assert!(event.paths.iter().any(|p| p.ends_with("new_file.txt")));
+}

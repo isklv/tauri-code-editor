@@ -106,6 +106,20 @@ export async function deleteEntry(path) {
   }
 }
 
+export async function watchDir(path) {
+  if (isTauri) return invoke('watch_dir', { path });
+}
+
+export async function unwatchDir() {
+  if (isTauri) return invoke('unwatch_dir');
+}
+
+/** Subscribe to file system changes; callback receives list of changed paths. */
+export async function onFsChange(callback) {
+  if (!isTauri) return () => {};
+  return listen('fs://change', (event) => callback(event.payload));
+}
+
 /**
  * True when the system folder picker returns a usable filesystem path.
  * Android's picker hands back `content://` URIs that `std::fs` cannot open,

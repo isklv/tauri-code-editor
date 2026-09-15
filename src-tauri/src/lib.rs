@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use notify::{recommended_watcher, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -278,6 +279,59 @@ fn delete_entry(path: String) -> Result<(), String> {
     }
 }
 
+// ── File watcher ──
+
+#[derive(Default)]
+struct FsWatcher {
+    watcher: Mutex<Option<RecommendedWatcher>>,
+}
+
+#[tauri::command]
+fn watch_dir(app: AppHandle, state: State<'_, Arc<FsWatcher>>, path: String) -> Result<(), String> {
+    let resolved = resolve(&path);
+    if !resolved.exists() {
+        return Err("directory does not exist".into());
+    }
+
+    let mut guard = state.watcher.lock().unwrap();
+    // Drop the previous watcher first.
+    *guard = None;
+
+    let emitter = app.clone();
+    let mut watcher = recommended_watcher(move |res: Result<Event, notify::Error>| {
+        if let Ok(event) = res {
+            // Ignore events where all paths are internal git files to avoid chatter.
+            let is_git_internal = !event.paths.is_empty()
+                && event
+                    .paths
+                    .iter()
+                    .all(|p| p.components().any(|c| c.as_os_str() == ".git"));
+            if !is_git_internal {
+                let paths: Vec<String> = event
+                    .paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                let _ = emitter.emit("fs://change", paths);
+            }
+        }
+    })
+    .map_err(err("cannot initialize file watcher"))?;
+
+    watcher
+        .watch(&resolved, RecursiveMode::Recursive)
+        .map_err(err("cannot watch directory"))?;
+
+    *guard = Some(watcher);
+    Ok(())
+}
+
+#[tauri::command]
+fn unwatch_dir(state: State<'_, Arc<FsWatcher>>) -> Result<(), String> {
+    *state.watcher.lock().unwrap() = None;
+    Ok(())
+}
+
 // ── Terminal (PTY) ──
 
 pub struct PtySession {
@@ -460,6 +514,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(Terminal::default()))
+        .manage(Arc::new(FsWatcher::default()))
         .invoke_handler(tauri::generate_handler![
             default_root,
             quick_roots,
@@ -470,6 +525,8 @@ pub fn run() {
             create_entry,
             rename_entry,
             delete_entry,
+            watch_dir,
+            unwatch_dir,
             pty_start,
             pty_write,
             pty_resize,

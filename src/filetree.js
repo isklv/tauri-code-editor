@@ -18,6 +18,8 @@ export class FileTree {
     this.expanded = new Set();
     this.children = new Map(); // path -> entries
     this.activePath = null;
+    this.refreshing = false;
+    this.pendingRefresh = false;
   }
 
   /** Point the explorer at `path`. Throws if the folder cannot be read. */
@@ -33,23 +35,36 @@ export class FileTree {
   /** Re-read every expanded directory and repaint. */
   async refresh() {
     if (!this.root) return;
-    const results = await Promise.all(
-      [...this.expanded].map(async (dir) => {
-        try {
-          return [dir, (await listDir(dir)).entries];
-        } catch {
-          return [dir, null]; // directory vanished or is unreadable
+    if (this.refreshing) {
+      this.pendingRefresh = true;
+      return;
+    }
+    this.refreshing = true;
+    try {
+      const results = await Promise.all(
+        [...this.expanded].map(async (dir) => {
+          try {
+            return [dir, (await listDir(dir)).entries];
+          } catch {
+            return [dir, null]; // directory vanished or is unreadable
+          }
+        }),
+      );
+      for (const [dir, entries] of results) {
+        if (entries) this.children.set(dir, entries);
+        else {
+          this.children.delete(dir);
+          this.expanded.delete(dir);
         }
-      }),
-    );
-    for (const [dir, entries] of results) {
-      if (entries) this.children.set(dir, entries);
-      else {
-        this.children.delete(dir);
-        this.expanded.delete(dir);
+      }
+      this.render();
+    } finally {
+      this.refreshing = false;
+      if (this.pendingRefresh) {
+        this.pendingRefresh = false;
+        this.refresh();
       }
     }
-    this.render();
   }
 
   async toggle(path) {
@@ -76,6 +91,7 @@ export class FileTree {
   }
 
   render() {
+    const prevScroll = this.host.scrollTop;
     this.host.textContent = '';
     if (!this.root) {
       this.host.appendChild(message('No folder opened'));
@@ -91,6 +107,7 @@ export class FileTree {
       return;
     }
     this.renderLevel(entries, 0, this.host);
+    this.host.scrollTop = prevScroll;
   }
 
   renderLevel(entries, depth, parentEl) {

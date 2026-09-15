@@ -6,6 +6,7 @@ import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+import { setupCompletions } from './completions.js';
 
 // Vite bundles each worker separately; Monaco asks for them by label.
 self.MonacoEnvironment = {
@@ -72,6 +73,40 @@ export function createEditor(container) {
     smoothScrolling: true,
     mouseWheelZoom: true,
     padding: { top: 8 },
+
+    // Autocomplete & IntelliSense
+    quickSuggestions: {
+      other: true,
+      comments: true,
+      strings: true,
+    },
+    quickSuggestionsDelay: 10,
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: 'on',
+    tabCompletion: 'on',
+    wordBasedSuggestions: 'allDocuments',
+    snippetSuggestions: 'top',
+    suggest: {
+      filterGraceful: true,
+      snippetsPreventQuickSuggestions: false,
+      localityBonus: true,
+      shareSuggestSelections: true,
+      showIcons: true,
+      showStatusBar: true,
+      preview: true,
+      previewMode: 'prefix',
+      insertMode: 'insert',
+    },
+    parameterHints: {
+      enabled: true,
+      cycle: true,
+    },
+    autoClosingBrackets: 'always',
+    autoClosingQuotes: 'always',
+    autoClosingComments: 'always',
+    autoSurround: 'languageDefined',
+    formatOnType: true,
+    formatOnPaste: true,
   });
 }
 
@@ -79,4 +114,4 @@ export function createModel(content, path) {
   return monaco.editor.createModel(content, languageFor(path));
 }
 
-export { monaco };
+export { monaco, setupCompletions };

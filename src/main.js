@@ -4,7 +4,7 @@ import * as api from './api.js';
 import { askConfirm, askFolder, askText } from './dialog.js';
 import { showMenu } from './contextmenu.js';
 import { openPalette } from './palette.js';
-import { createEditor, createModel } from './editor.js';
+import { createEditor, createModel, monaco, setupCompletions } from './editor.js';
 import { FileTree } from './filetree.js';
 import { TerminalPanel } from './terminal.js';
 
@@ -79,6 +79,33 @@ const tree = new FileTree($('file-tree'), {
   onContextMenu: (entry, x, y) => showEntryMenu(entry, x, y),
 });
 
+setupCompletions(monaco, {
+  getActivePath: () => activePath,
+  getRootPath: () => rootPath,
+});
+
+let refreshDebounceTimer = null;
+function scheduleTreeRefresh(delay = 150) {
+  clearTimeout(refreshDebounceTimer);
+  refreshDebounceTimer = setTimeout(() => {
+    tree.refresh();
+  }, delay);
+}
+
+api.onFsChange(() => {
+  scheduleTreeRefresh();
+});
+
+window.addEventListener('focus', () => {
+  scheduleTreeRefresh(50);
+});
+
+setInterval(() => {
+  if (document.visibilityState === 'visible' && rootPath) {
+    tree.refresh();
+  }
+}, 4000);
+
 // ── Status bar ──
 
 function setStatus(message, isError = false, resetAfter = isError ? 6000 : 2500) {
@@ -147,6 +174,7 @@ async function saveFile(path = activePath) {
     entry.saved = content;
     renderTabs();
     setStatus(`Saved ${api.basename(path)}`);
+    scheduleTreeRefresh(50);
   } catch (e) {
     setStatus(`Save failed: ${e}`, true);
   }
@@ -231,6 +259,11 @@ async function openFolder(path) {
   $('root-path').title = path;
   if (activePath) tree.setActive(activePath);
   updateStatus();
+  try {
+    await api.watchDir(path);
+  } catch (e) {
+    console.warn('Cannot watch folder:', e);
+  }
   return true;
 }
 
