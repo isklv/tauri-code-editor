@@ -1,6 +1,7 @@
 /** Expandable file explorer backed by the `list_dir` command. */
 
 import { listDir } from './api.js';
+import { getFileIconHtml } from './icons.js';
 
 export class FileTree {
   /**
@@ -133,7 +134,8 @@ export class FileTree {
     row.appendChild(twisty);
 
     const icon = document.createElement('span');
-    icon.textContent = entry.is_dir ? '📁' : '📄';
+    icon.className = 'tree-icon';
+    icon.innerHTML = getFileIconHtml(entry.name, entry.is_dir, this.expanded.has(entry.path));
     row.appendChild(icon);
 
     const label = document.createElement('span');

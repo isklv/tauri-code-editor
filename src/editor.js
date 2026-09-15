@@ -114,4 +114,17 @@ export function createModel(content, path) {
   return monaco.editor.createModel(content, languageFor(path));
 }
 
+export function createDiffEditor(container) {
+  return monaco.editor.createDiffEditor(container, {
+    originalEditable: false,
+    readOnly: false,
+    theme: 'vs-dark',
+    fontSize: 14,
+    fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono-font').trim(),
+    automaticLayout: true,
+    renderSideBySide: window.innerWidth > 750,
+    smoothScrolling: true,
+  });
+}
+
 export { monaco, setupCompletions };

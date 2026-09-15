@@ -194,3 +194,86 @@ fn linux_env_target_arch_is_valid() {
     assert!(!arch.is_empty());
     assert!(["aarch64", "arm", "x86_64"].contains(&arch));
 }
+
+#[test]
+fn git_porcelain_parsing_categorizes_correctly() {
+    use tauri_code_editor::git::parse_porcelain_status;
+    let root = std::path::Path::new("/dummy/repo");
+    let output = " M src/main.js\nM  src/file.js\nMM src/both.js\n?? untracked.txt\nA  added.txt\n D deleted.txt\n";
+
+    let (staged, unstaged, untracked) = parse_porcelain_status(root, output);
+
+    assert_eq!(staged.len(), 3); // file.js (M), both.js (M), added.txt (A)
+    assert_eq!(unstaged.len(), 3); // main.js (M), both.js (M), deleted.txt (D)
+    assert_eq!(untracked.len(), 1); // untracked.txt
+
+    assert_eq!(staged[0].path, "src/file.js");
+    assert_eq!(staged[0].status, "modified");
+    assert!(staged[0].staged);
+
+    assert_eq!(untracked[0].path, "untracked.txt");
+    assert_eq!(untracked[0].status, "untracked");
+}
+
+#[test]
+fn git_find_root_and_read_head() {
+    use tauri_code_editor::git::{find_git_root, read_git_head};
+    let dir = temp_dir("git-root-test");
+    let git_dir = dir.join(".git");
+    fs::create_dir_all(&git_dir).unwrap();
+    fs::write(git_dir.join("HEAD"), "ref: refs/heads/feature/branch-x\n").unwrap();
+
+    let sub_dir = dir.join("nested").join("folder");
+    fs::create_dir_all(&sub_dir).unwrap();
+
+    let found = find_git_root(&sub_dir).expect("should find root");
+    assert_eq!(found, dir);
+
+    let branch = read_git_head(&dir).expect("should read branch");
+    assert_eq!(branch, "feature/branch-x");
+}
+
+#[test]
+fn git_repo_status_on_local_repo() {
+    use tauri_code_editor::git::{commit, get_repo_status, stage_files};
+    let dir = temp_dir("git-status-test");
+
+    // Initialize repo using git CLI
+    let init_res = std::process::Command::new("git")
+        .current_dir(&dir)
+        .args(["init", "-b", "main"])
+        .output();
+    if init_res.is_err() || !init_res.as_ref().unwrap().status.success() {
+        // Fallback for older git without -b
+        let _ = std::process::Command::new("git")
+            .current_dir(&dir)
+            .args(["init"])
+            .output();
+    }
+    // Set dummy config for commit
+    let _ = std::process::Command::new("git")
+        .current_dir(&dir)
+        .args(["config", "user.name", "Test"])
+        .output();
+    let _ = std::process::Command::new("git")
+        .current_dir(&dir)
+        .args(["config", "user.email", "test@example.com"])
+        .output();
+
+    fs::write(dir.join("readme.md"), "# Hello").unwrap();
+
+    let status = get_repo_status(None, dir.to_str().unwrap()).unwrap();
+    assert!(status.is_repo);
+    assert_eq!(status.untracked.len(), 1);
+    assert_eq!(status.untracked[0].path, "readme.md");
+
+    // Stage
+    stage_files(None, dir.to_str().unwrap(), &["readme.md".to_string()]).unwrap();
+    let status_staged = get_repo_status(None, dir.to_str().unwrap()).unwrap();
+    assert_eq!(status_staged.staged.len(), 1);
+
+    // Commit
+    commit(None, dir.to_str().unwrap(), "Initial commit").unwrap();
+    let status_clean = get_repo_status(None, dir.to_str().unwrap()).unwrap();
+    assert_eq!(status_clean.total_changes, 0);
+}

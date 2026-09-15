@@ -225,3 +225,113 @@ export function dirname(path) {
 export function join(dir, name) {
   return dir.replace(/[\\/]+$/, '') + '/' + name;
 }
+
+// ── Git & GitHub ──
+
+export async function gitStatus(path) {
+  if (isTauri) return invoke('git_status', { path });
+  return {
+    is_repo: true,
+    root: DEMO_ROOT,
+    branch: 'main',
+    remote_url: 'https://github.com/demo/workspace',
+    ahead: 0,
+    behind: 0,
+    staged: [],
+    unstaged: [
+      { path: 'src/main.js', full_path: '/demo/src/main.js', status: 'modified', staged: false, unstaged: true },
+    ],
+    untracked: [],
+    total_changes: 1,
+  };
+}
+
+export async function gitStage(path, files = []) {
+  if (isTauri) return invoke('git_stage', { path, files });
+}
+
+export async function gitUnstage(path, files = []) {
+  if (isTauri) return invoke('git_unstage', { path, files });
+}
+
+export async function gitDiscard(path, files = []) {
+  if (isTauri) return invoke('git_discard', { path, files });
+}
+
+export async function gitCommit(path, message) {
+  if (isTauri) return invoke('git_commit', { path, message });
+  return `[main demo123] ${message}`;
+}
+
+export async function gitPush(path, token = null) {
+  if (isTauri) return invoke('git_push', { path, token });
+  return 'Everything up-to-date';
+}
+
+export async function gitPull(path, token = null) {
+  if (isTauri) return invoke('git_pull', { path, token });
+  return 'Already up-to-date';
+}
+
+export async function gitFetch(path, token = null) {
+  if (isTauri) return invoke('git_fetch', { path, token });
+  return '';
+}
+
+export async function gitDiff(path, file, staged = false) {
+  if (isTauri) return invoke('git_diff', { path, file, staged });
+  return '';
+}
+
+export async function gitShowFile(path, file, revision = null) {
+  if (isTauri) return invoke('git_show_file', { path, file, revision });
+  return '';
+}
+
+export async function gitBranches(path) {
+  if (isTauri) return invoke('git_branches', { path });
+  return ['main'];
+}
+
+export async function gitCheckout(path, branch) {
+  if (isTauri) return invoke('git_checkout', { path, branch });
+  return '';
+}
+
+export async function gitCreateBranch(path, branch) {
+  if (isTauri) return invoke('git_create_branch', { path, branch });
+  return '';
+}
+
+export async function gitClone(url, targetParent, customName = null, token = null) {
+  if (isTauri) return invoke('git_clone', { url, targetParent, customName, token });
+  throw new Error('git clone requires the desktop/mobile application');
+}
+
+export async function githubGetUser(token) {
+  if (isTauri) return invoke('github_get_user', { token });
+  const res = await fetch('https://api.github.com/user', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+    },
+  });
+  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+  return res.json();
+}
+
+export async function githubListRepos(token) {
+  if (isTauri) return invoke('github_list_repos', { token });
+  const res = await fetch(
+    'https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator',
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+      },
+    },
+  );
+  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+  return res.json();
+}
+

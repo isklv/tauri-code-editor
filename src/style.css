@@ -54,6 +54,75 @@ body {
   position: relative;
 }
 
+/* ── Activity Bar (VS Code style left rail) ── */
+
+.activity-bar {
+  width: 48px;
+  background: #181818;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex-shrink: 0;
+  z-index: 45;
+}
+
+.activity-top,
+.activity-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.activity-item {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #858585;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.activity-item:hover {
+  color: #d4d4d4;
+  background: #222222;
+}
+
+.activity-item.active {
+  color: #ffffff;
+}
+
+.activity-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.activity-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 8px;
+  padding: 0 4px;
+}
+
 /* Scrim behind the sidebar when it floats over the editor on narrow screens. */
 .scrim {
   display: none;
@@ -81,15 +150,24 @@ body:not(.sidebar-open) .resizer-v {
   display: none;
 }
 
-/* Phone layout: the sidebar slides over the editor instead of shrinking it. */
+/* Phone layout: the sidebar slides over the editor starting next to activity bar */
 @media (max-width: 700px) {
+  .activity-bar {
+    width: 42px;
+  }
+
+  .activity-item {
+    width: 42px;
+    height: 42px;
+  }
+
   .sidebar {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 0;
+    left: 42px;
     z-index: 50;
-    width: min(80vw, 320px);
+    width: min(calc(100vw - 42px), 300px);
     max-width: none;
     box-shadow: 4px 0 16px #00000066;
   }
@@ -101,6 +179,7 @@ body:not(.sidebar-open) .resizer-v {
 
   body.sidebar-open .scrim {
     display: block;
+    left: 42px;
   }
 
   .resizer-v {
@@ -459,15 +538,46 @@ button.tool:active {
 .statusbar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 10px;
+  height: 22px;
   background: var(--accent);
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 22px;
   white-space: nowrap;
   overflow: hidden;
-  min-height: 22px;
+  flex-shrink: 0;
+  padding: 0 4px;
   padding-bottom: env(safe-area-inset-bottom);
+  user-select: none;
+}
+
+.statusbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  height: 100%;
+}
+
+button.statusbar-item {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+button.statusbar-item:hover {
+  background: #ffffff25;
+}
+
+.statusbar-git {
+  font-weight: 600;
+}
+
+.statusbar-sync {
+  opacity: 0.9;
 }
 
 .statusbar .spacer {
@@ -477,6 +587,7 @@ button.tool:active {
 .statusbar .message {
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 350px;
 }
 
 .statusbar .message.error {
@@ -778,3 +889,610 @@ button.tool.primary:hover {
   background: #454545;
   margin: 4px 2px;
 }
+
+/* ── File Tree Badges & Icons ── */
+
+.tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.file-icon-badge {
+  font-size: 8px;
+  font-weight: 700;
+  font-family: var(--mono-font);
+  border-radius: 2px;
+  padding: 1px 3px;
+  display: inline-block;
+  line-height: 1.1;
+  text-align: center;
+  letter-spacing: -0.5px;
+}
+
+.tab-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+/* ── Breadcrumbs ── */
+
+.breadcrumbs-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 12px;
+  background: var(--bg);
+  border-bottom: 1px solid #282828;
+  font-size: 11px;
+  color: var(--fg-dim);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.breadcrumbs-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.breadcrumb-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.breadcrumb-segment:hover {
+  color: var(--fg);
+}
+
+.breadcrumb-sep {
+  color: #555;
+  font-size: 9px;
+  user-select: none;
+  margin: 0 2px;
+}
+
+/* ── Editor Container & Diff Editor ── */
+
+.editor-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.diff-editor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  z-index: 15;
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--bg-tab);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  flex-shrink: 0;
+}
+
+.diff-host {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Sidebar Views ── */
+
+.sidebar-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Search View ── */
+
+.search-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: var(--ui-font);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.search-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.search-results {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.search-result-item:hover {
+  background: var(--hover);
+}
+
+.search-result-name {
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.search-result-path {
+  color: var(--fg-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* ── Git Panel ── */
+
+.git-panel-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.git-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.git-branch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #333;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 140px;
+  overflow: hidden;
+}
+
+.git-branch-pill:hover {
+  background: #444;
+}
+
+.git-branch-pill .branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-commit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.git-commit-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: var(--ui-font);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  resize: vertical;
+  min-height: 48px;
+}
+
+.git-commit-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.git-commit-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+.btn-secondary {
+  background: #3a3d41;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: #4a4d51;
+}
+
+.btn-danger {
+  background: #a1260d;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  background: #b82c0f;
+}
+
+.git-sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: #252526;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.git-sync-btn {
+  background: #333;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.git-sync-btn:hover {
+  background: #444;
+}
+
+.git-clean-message {
+  padding: 16px 8px;
+  text-align: center;
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.git-empty-state {
+  padding: 24px 12px;
+  text-align: center;
+}
+
+.git-section {
+  margin-bottom: 8px;
+}
+
+.git-section-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.git-count-badge {
+  background: #333;
+  color: var(--fg);
+  font-size: 10px;
+  border-radius: 8px;
+  padding: 0 5px;
+  margin-left: 4px;
+}
+
+.git-file-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.git-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.git-file-row:hover {
+  background: var(--hover);
+}
+
+.git-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.git-badge-m {
+  color: #e2c08d;
+}
+
+.git-badge-a {
+  color: #73c991;
+}
+
+.git-badge-d {
+  color: #c74e39;
+}
+
+.git-badge-u {
+  color: #73c991;
+}
+
+.git-file-name {
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-file-dir {
+  color: var(--fg-dim);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+
+.git-row-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.git-file-row:hover .git-row-actions {
+  display: flex;
+}
+
+.mini-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 0;
+  border-radius: 3px;
+}
+
+/* ── Modals ── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: #00000077;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-box {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #000000aa;
+  width: 420px;
+  max-width: 95vw;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 14px;
+}
+
+.modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: var(--ui-font);
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+
+.modal-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gh-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gh-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+.gh-info .gh-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gh-info .gh-login {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.gh-info .gh-meta {
+  font-size: 11px;
+  color: var(--fg-dim);
+  margin-top: 2px;
+}
+
+.clone-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.clone-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-dim);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.clone-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.clone-repos-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #1e1e1e;
+}
+
+.clone-repo-item {
+  padding: 8px 10px;
+  border-bottom: 1px solid #282828;
+  cursor: pointer;
+}
+
+.clone-repo-item:hover {
+  background: var(--hover);
+}
+
+.clone-repo-item:last-child {
+  border-bottom: none;
+}
+
+.repo-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.repo-desc {
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.badge-private {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #444;
+  color: #fff;
+}
+

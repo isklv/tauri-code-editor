@@ -8,6 +8,7 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+pub mod git;
 pub mod linux_env;
 
 // ── Errors ──
@@ -562,6 +563,105 @@ fn remove_linux_env(app: AppHandle) -> Result<(), String> {
     linux_env::remove_env(&app)
 }
 
+// ── Git commands ──
+
+#[tauri::command]
+fn git_status(app: AppHandle, path: String) -> Result<git::GitRepoStatus, String> {
+    git::get_repo_status(Some(&app), &path)
+}
+
+#[tauri::command]
+fn git_stage(app: AppHandle, path: String, files: Vec<String>) -> Result<(), String> {
+    git::stage_files(Some(&app), &path, &files)
+}
+
+#[tauri::command]
+fn git_unstage(app: AppHandle, path: String, files: Vec<String>) -> Result<(), String> {
+    git::unstage_files(Some(&app), &path, &files)
+}
+
+#[tauri::command]
+fn git_discard(app: AppHandle, path: String, files: Vec<String>) -> Result<(), String> {
+    git::discard_files(Some(&app), &path, &files)
+}
+
+#[tauri::command]
+fn git_commit(app: AppHandle, path: String, message: String) -> Result<String, String> {
+    git::commit(Some(&app), &path, &message)
+}
+
+#[tauri::command]
+fn git_push(app: AppHandle, path: String, token: Option<String>) -> Result<String, String> {
+    git::push(Some(&app), &path, token.as_deref())
+}
+
+#[tauri::command]
+fn git_pull(app: AppHandle, path: String, token: Option<String>) -> Result<String, String> {
+    git::pull(Some(&app), &path, token.as_deref())
+}
+
+#[tauri::command]
+fn git_fetch(app: AppHandle, path: String, token: Option<String>) -> Result<String, String> {
+    git::fetch(Some(&app), &path, token.as_deref())
+}
+
+#[tauri::command]
+fn git_diff(app: AppHandle, path: String, file: String, staged: bool) -> Result<String, String> {
+    git::diff_file(Some(&app), &path, &file, staged)
+}
+
+#[tauri::command]
+fn git_show_file(
+    app: AppHandle,
+    path: String,
+    file: String,
+    revision: Option<String>,
+) -> Result<String, String> {
+    git::show_file(Some(&app), &path, &file, revision.as_deref())
+}
+
+#[tauri::command]
+fn git_branches(app: AppHandle, path: String) -> Result<Vec<String>, String> {
+    git::list_branches(Some(&app), &path)
+}
+
+#[tauri::command]
+fn git_checkout(app: AppHandle, path: String, branch: String) -> Result<String, String> {
+    git::checkout_branch(Some(&app), &path, &branch)
+}
+
+#[tauri::command]
+fn git_create_branch(app: AppHandle, path: String, branch: String) -> Result<String, String> {
+    git::create_branch(Some(&app), &path, &branch)
+}
+
+#[tauri::command]
+fn git_clone(
+    app: AppHandle,
+    url: String,
+    target_parent: String,
+    custom_name: Option<String>,
+    token: Option<String>,
+) -> Result<String, String> {
+    git::clone_repo(
+        Some(&app),
+        &url,
+        &target_parent,
+        custom_name.as_deref(),
+        token.as_deref(),
+    )
+}
+
+#[tauri::command]
+fn github_get_user(token: String) -> Result<git::GitHubUser, String> {
+    git::github_get_user(&token)
+}
+
+#[tauri::command]
+fn github_list_repos(token: String) -> Result<Vec<git::GitHubRepo>, String> {
+    git::github_list_repos(&token)
+}
+
 // ── Setup ──
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -590,6 +690,22 @@ pub fn run() {
             get_linux_env_status,
             install_linux_env,
             remove_linux_env,
+            git_status,
+            git_stage,
+            git_unstage,
+            git_discard,
+            git_commit,
+            git_push,
+            git_pull,
+            git_fetch,
+            git_diff,
+            git_show_file,
+            git_branches,
+            git_checkout,
+            git_create_branch,
+            git_clone,
+            github_get_user,
+            github_list_repos,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

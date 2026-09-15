@@ -4,24 +4,77 @@ import * as api from './api.js';
 import { askConfirm, askFolder, askText } from './dialog.js';
 import { showMenu } from './contextmenu.js';
 import { openPalette } from './palette.js';
-import { createEditor, createModel, monaco, setupCompletions } from './editor.js';
+import { createDiffEditor, createEditor, createModel, monaco, setupCompletions } from './editor.js';
 import { FileTree } from './filetree.js';
 import { TerminalPanel } from './terminal.js';
+import { GitPanel } from './gitpanel.js';
+import { getFileIconHtml, SVG_ICONS } from './icons.js';
 
 // ── Layout ──
 
 document.getElementById('app').innerHTML = `
   <div class="workbench">
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <span class="title" id="root-name">Explorer</span>
-        <button class="icon-button" id="btn-up" title="Go to parent folder">↑</button>
-        <button class="icon-button" id="btn-new-file" title="New file">＋</button>
-        <button class="icon-button" id="btn-refresh" title="Refresh">⟳</button>
+    <!-- Activity Bar (VS Code style left rail) -->
+    <nav class="activity-bar" id="activity-bar">
+      <div class="activity-top">
+        <button class="activity-item active" id="act-explorer" data-view="explorer" title="Explorer (Ctrl+Shift+E)">
+          ${SVG_ICONS.explorer}
+        </button>
+        <button class="activity-item" id="act-search" data-view="search" title="Search Files (Ctrl+Shift+F)">
+          ${SVG_ICONS.search}
+        </button>
+        <button class="activity-item" id="act-git" data-view="git" title="Source Control & GitHub (Ctrl+Shift+G)">
+          ${SVG_ICONS.git}
+          <span class="activity-badge" id="git-badge" style="display:none">0</span>
+        </button>
       </div>
-      <div class="sidebar-path" id="root-path"></div>
-      <div class="file-tree" id="file-tree"></div>
+      <div class="activity-bottom">
+        <button class="activity-item" id="act-terminal" title="Toggle Terminal (Ctrl+\`)">
+          ${SVG_ICONS.terminal}
+        </button>
+        <button class="activity-item" id="act-github" title="GitHub & Account">
+          ${SVG_ICONS.github}
+        </button>
+      </div>
+    </nav>
+
+    <!-- Sidebar with multiple views -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Explorer View -->
+      <div class="sidebar-view" id="view-explorer">
+        <div class="sidebar-header">
+          <span class="title" id="root-name">Explorer</span>
+          <button class="icon-button" id="btn-up" title="Go to parent folder">↑</button>
+          <button class="icon-button" id="btn-new-file" title="New file">＋</button>
+          <button class="icon-button" id="btn-refresh" title="Refresh">⟳</button>
+        </div>
+        <div class="sidebar-path" id="root-path"></div>
+        <div class="file-tree" id="file-tree"></div>
+      </div>
+
+      <!-- Search View -->
+      <div class="sidebar-view" id="view-search" style="display:none;">
+        <div class="sidebar-header">
+          <span class="title">Search Files</span>
+          <button class="icon-button" id="btn-refresh-search" title="Clear search">×</button>
+        </div>
+        <div class="search-panel">
+          <input type="text" class="search-input" id="search-query" placeholder="Type filename to search..." />
+          <div class="search-results" id="search-results">
+            <div style="padding:12px; color:var(--fg-dim); text-align:center;">Type a query above to search files</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Source Control / Git View -->
+      <div class="sidebar-view" id="view-git" style="display:none;">
+        <div class="sidebar-header">
+          <span class="title">Source Control</span>
+        </div>
+        <div class="git-panel-host" id="git-panel-host"></div>
+      </div>
     </aside>
+
     <div class="resizer-v" id="resizer-sidebar"></div>
     <div class="scrim" id="scrim"></div>
 
@@ -31,10 +84,26 @@ document.getElementById('app').innerHTML = `
         <button class="tool" id="btn-open">Open Folder</button>
         <button class="tool" id="btn-save">Save</button>
         <button class="tool" id="btn-goto">Go to File</button>
+        <button class="tool" id="btn-clone-toolbar" title="Clone repository from GitHub">GitHub Clone...</button>
         <button class="tool" id="btn-toggle-terminal">Terminal</button>
       </div>
+
       <div class="tabbar" id="tabbar"></div>
-      <div class="editor" id="editor"></div>
+
+      <!-- Breadcrumbs bar -->
+      <div class="breadcrumbs-bar" id="breadcrumbs" style="display:none;"></div>
+
+      <div class="editor-container" id="editor-container">
+        <div class="editor" id="editor"></div>
+        <div class="diff-editor" id="diff-editor" style="display:none;">
+          <div class="diff-header">
+            <span class="diff-title" id="diff-title">Diff View</span>
+            <button class="icon-button" id="btn-close-diff" title="Close Diff View">×</button>
+          </div>
+          <div class="diff-host" id="diff-host"></div>
+        </div>
+      </div>
+
       <div class="resizer-h" id="resizer-panel"></div>
       <section class="panel" id="panel">
         <div class="panel-header">
@@ -62,10 +131,18 @@ document.getElementById('app').innerHTML = `
   </div>
 
   <footer class="statusbar">
-    <span class="message" id="status-message">Ready</span>
+    <button class="statusbar-item statusbar-git" id="status-git-branch" style="display:none;" title="Git Branch (click to switch or create)">
+      ${SVG_ICONS.branch} <span id="status-branch-name">main</span>
+    </button>
+    <button class="statusbar-item statusbar-sync" id="status-git-sync" style="display:none;" title="Sync Changes (Pull & Push)">
+      ${SVG_ICONS.sync} <span id="status-sync-counts">0↓ 0↑</span>
+    </button>
+    <span class="statusbar-item message" id="status-message">Ready</span>
     <span class="spacer"></span>
-    <span id="status-position"></span>
-    <span id="status-language"></span>
+    <span class="statusbar-item" id="status-position"></span>
+    <span class="statusbar-item" id="status-encoding">UTF-8</span>
+    <span class="statusbar-item" id="status-indent">Spaces: 2</span>
+    <span class="statusbar-item" id="status-language"></span>
   </footer>
 `;
 
@@ -78,16 +155,41 @@ const openFiles = new Map();
 let activePath = null;
 let rootPath = null;
 let statusTimer = null;
+let currentView = 'explorer';
 
 const editor = createEditor($('editor'));
+const diffEditor = createDiffEditor($('diff-host'));
+let diffOriginalModel = null;
+let diffModifiedModel = null;
+
 const terminal = new TerminalPanel($('terminal'), $('term-keys'));
 const tree = new FileTree($('file-tree'), {
   onOpenFile: async (path) => {
+    closeDiff();
     await openFile(path);
     if (isNarrow()) setSidebar(false);
   },
   onError: (msg) => setStatus(msg, true),
   onContextMenu: (entry, x, y) => showEntryMenu(entry, x, y),
+});
+
+const gitPanel = new GitPanel($('git-panel-host'), {
+  getRoot: () => rootPath,
+  onOpenFile: async (path) => {
+    closeDiff();
+    await openFile(path);
+    if (isNarrow()) setSidebar(false);
+  },
+  onOpenDiff: async (file) => {
+    await openDiff(file);
+    if (isNarrow()) setSidebar(false);
+  },
+  onFolderChanged: async (newRoot) => {
+    await openFolder(newRoot);
+    await terminal.restart(newRoot, currentShellMode);
+  },
+  onError: (msg) => setStatus(msg, true),
+  onStatusUpdated: (status) => updateGitStatus(status),
 });
 
 setupCompletions(monaco, {
@@ -100,6 +202,9 @@ function scheduleTreeRefresh(delay = 150) {
   clearTimeout(refreshDebounceTimer);
   refreshDebounceTimer = setTimeout(() => {
     tree.refresh();
+    if (currentView === 'git') {
+      gitPanel.refresh();
+    }
   }, delay);
 }
 
@@ -114,10 +219,185 @@ window.addEventListener('focus', () => {
 setInterval(() => {
   if (document.visibilityState === 'visible' && rootPath) {
     tree.refresh();
+    if (currentView === 'git') {
+      gitPanel.refresh();
+    }
   }
-}, 4000);
+}, 5000);
 
-// ── Status bar ──
+// ── Activity Bar Navigation ──
+
+function setSidebarView(viewName) {
+  if (currentView === viewName && document.body.classList.contains('sidebar-open')) {
+    setSidebar(false);
+    return;
+  }
+
+  currentView = viewName;
+  document.querySelectorAll('.activity-item[data-view]').forEach((el) => {
+    el.classList.toggle('active', el.getAttribute('data-view') === viewName);
+  });
+
+  ['explorer', 'search', 'git'].forEach((v) => {
+    const viewEl = $(`view-${v}`);
+    if (viewEl) viewEl.style.display = v === viewName ? 'flex' : 'none';
+  });
+
+  if (viewName === 'git') {
+    gitPanel.refresh();
+  } else if (viewName === 'search') {
+    setTimeout(() => $('search-query')?.focus(), 50);
+  }
+
+  setSidebar(true);
+}
+
+$('act-explorer')?.addEventListener('click', () => setSidebarView('explorer'));
+$('act-search')?.addEventListener('click', () => setSidebarView('search'));
+$('act-git')?.addEventListener('click', () => setSidebarView('git'));
+$('act-terminal')?.addEventListener('click', () => toggleTerminal());
+$('act-github')?.addEventListener('click', () => gitPanel.showGitHubModal());
+$('btn-clone-toolbar')?.addEventListener('click', () => gitPanel.showCloneModal());
+
+// ── Search View Implementation ──
+
+let searchDebounce = null;
+$('search-query')?.addEventListener('input', (e) => {
+  clearTimeout(searchDebounce);
+  const query = e.target.value.trim();
+  searchDebounce = setTimeout(async () => {
+    if (!rootPath || !query) {
+      $('search-results').innerHTML = '<div style="padding:12px; color:var(--fg-dim); text-align:center;">Type filename to search...</div>';
+      return;
+    }
+    try {
+      const results = await api.findFiles(rootPath, query);
+      const host = $('search-results');
+      host.innerHTML = '';
+      if (results.length === 0) {
+        host.innerHTML = '<div style="padding:12px; color:var(--fg-dim); text-align:center;">No files found</div>';
+        return;
+      }
+      for (const file of results.slice(0, 60)) {
+        const row = document.createElement('div');
+        row.className = 'search-result-item';
+        const base = api.basename(file);
+        const dir = api.dirname(file);
+        row.innerHTML = `
+          <span class="tab-icon">${getFileIconHtml(base)}</span>
+          <span class="search-result-name">${base}</span>
+          <span class="search-result-path">${dir}</span>
+        `;
+        row.addEventListener('click', () => {
+          closeDiff();
+          openFile(file);
+          if (isNarrow()) setSidebar(false);
+        });
+        host.appendChild(row);
+      }
+    } catch (err) {
+      $('search-results').innerHTML = `<div style="padding:8px; color:var(--error);">${err}</div>`;
+    }
+  }, 200);
+});
+
+$('btn-refresh-search')?.addEventListener('click', () => {
+  const q = $('search-query');
+  if (q) {
+    q.value = '';
+    $('search-results').innerHTML = '<div style="padding:12px; color:var(--fg-dim); text-align:center;">Type a query above to search files</div>';
+  }
+});
+
+// ── Diff Viewer ──
+
+async function openDiff(file) {
+  try {
+    let origText = '';
+    if (file.status !== 'untracked' && file.status !== 'added') {
+      try {
+        origText = await api.gitShowFile(rootPath, file.path, file.staged ? 'HEAD' : null);
+      } catch {
+        origText = '';
+      }
+    }
+
+    let currText = '';
+    try {
+      currText = await api.readFile(file.full_path);
+    } catch {
+      currText = '';
+    }
+
+    if (diffOriginalModel) diffOriginalModel.dispose();
+    if (diffModifiedModel) diffModifiedModel.dispose();
+
+    diffOriginalModel = createModel(origText, file.path);
+    diffModifiedModel = createModel(currText, file.path);
+
+    diffEditor.setModel({
+      original: diffOriginalModel,
+      modified: diffModifiedModel,
+    });
+
+    $('diff-title').textContent = `${api.basename(file.path)} (${file.staged ? 'Index ↔ HEAD' : 'Working Tree ↔ Index'})`;
+    $('diff-editor').style.display = 'flex';
+    $('editor').style.display = 'none';
+  } catch (e) {
+    setStatus(`Cannot open diff: ${e}`, true);
+  }
+}
+
+function closeDiff() {
+  $('diff-editor').style.display = 'none';
+  $('editor').style.display = 'block';
+  if (diffOriginalModel) {
+    diffOriginalModel.dispose();
+    diffOriginalModel = null;
+  }
+  if (diffModifiedModel) {
+    diffModifiedModel.dispose();
+    diffModifiedModel = null;
+  }
+  editor.focus();
+}
+
+$('btn-close-diff')?.addEventListener('click', closeDiff);
+
+// ── Git Status & Status Bar ──
+
+function updateGitStatus(status) {
+  const branchPill = $('status-git-branch');
+  const branchName = $('status-branch-name');
+  const syncPill = $('status-git-sync');
+  const syncCounts = $('status-sync-counts');
+  const gitBadge = $('git-badge');
+
+  if (status && status.is_repo) {
+    branchPill.style.display = 'inline-flex';
+    branchName.textContent = status.branch || 'HEAD';
+    syncPill.style.display = 'inline-flex';
+    syncCounts.textContent = `${status.behind}↓ ${status.ahead}↑`;
+
+    const count = status.total_changes;
+    if (count > 0) {
+      gitBadge.style.display = 'block';
+      gitBadge.textContent = count > 99 ? '99+' : String(count);
+    } else {
+      gitBadge.style.display = 'none';
+    }
+  } else {
+    branchPill.style.display = 'none';
+    syncPill.style.display = 'none';
+    gitBadge.style.display = 'none';
+  }
+}
+
+$('status-git-branch')?.addEventListener('click', () => gitPanel.switchBranch());
+$('status-git-sync')?.addEventListener('click', async () => {
+  if (gitPanel.status?.behind > 0) await gitPanel.pull();
+  if (gitPanel.status?.ahead > 0) await gitPanel.push();
+});
 
 function setStatus(message, isError = false, resetAfter = isError ? 6000 : 2500) {
   const el = $('status-message');
@@ -134,11 +414,54 @@ function updateStatus() {
   const model = activePath ? editor.getModel() : null;
   $('status-language').textContent = model ? model.getLanguageId() : '';
   if (!activePath) $('status-position').textContent = '';
+  updateBreadcrumbs();
 }
 
 editor.onDidChangeCursorPosition((e) => {
   $('status-position').textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
 });
+
+// ── Breadcrumbs ──
+
+function updateBreadcrumbs() {
+  const container = $('breadcrumbs');
+  if (!container) return;
+  container.textContent = '';
+  if (!activePath) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'flex';
+  const rootName = rootPath ? api.basename(rootPath) : 'Workspace';
+  const rel = rootPath && activePath.startsWith(rootPath)
+    ? activePath.slice(rootPath.length).replace(/^[\\/]+/, '')
+    : activePath;
+  const parts = rel.split(/[\\/]/).filter(Boolean);
+
+  const rootSeg = document.createElement('span');
+  rootSeg.className = 'breadcrumb-segment';
+  rootSeg.textContent = rootName;
+  rootSeg.addEventListener('click', () => setSidebarView('explorer'));
+  container.appendChild(rootSeg);
+
+  for (let i = 0; i < parts.length; i++) {
+    const sep = document.createElement('span');
+    sep.className = 'breadcrumb-sep';
+    sep.textContent = '›';
+    container.appendChild(sep);
+
+    const seg = document.createElement('span');
+    seg.className = 'breadcrumb-segment';
+    if (i === parts.length - 1) {
+      seg.innerHTML = `${getFileIconHtml(parts[i])} <span>${parts[i]}</span>`;
+      seg.style.fontWeight = '500';
+      seg.style.color = 'var(--fg)';
+    } else {
+      seg.textContent = parts[i];
+    }
+    container.appendChild(seg);
+  }
+}
 
 // ── Files ──
 
@@ -230,6 +553,11 @@ function renderTabs() {
     if (isDirty(path)) tab.classList.add('dirty');
     tab.title = path;
 
+    const icon = document.createElement('span');
+    icon.className = 'tab-icon';
+    icon.innerHTML = getFileIconHtml(api.basename(path));
+    tab.appendChild(icon);
+
     const name = document.createElement('span');
     name.textContent = api.basename(path);
     tab.appendChild(name);
@@ -242,12 +570,14 @@ function renderTabs() {
     });
     tab.appendChild(close);
 
-    tab.addEventListener('click', () => activate(path));
+    tab.addEventListener('click', () => {
+      closeDiff();
+      activate(path);
+    });
     bar.appendChild(tab);
   }
 }
 
-/** Move `step` tabs along the open list, wrapping around. */
 function cycleTab(step) {
   const paths = [...openFiles.keys()];
   if (paths.length < 2) return;
@@ -275,6 +605,7 @@ async function openFolder(path) {
   } catch (e) {
     console.warn('Cannot watch folder:', e);
   }
+  gitPanel.refresh();
   return true;
 }
 
@@ -299,7 +630,6 @@ async function renameEntry(entry) {
   const target = api.join(api.dirname(entry.path), name);
   try {
     await api.renameEntry(entry.path, target);
-    // An open tab still points at the old path, so move it across.
     if (openFiles.has(entry.path)) {
       const open = openFiles.get(entry.path);
       openFiles.delete(entry.path);
@@ -367,8 +697,6 @@ async function copyText(text) {
 // ── Toolbar / commands ──
 
 async function chooseFolder() {
-  // The native picker only returns real paths on desktop; elsewhere the app
-  // offers its own list of roots plus a typed path.
   const picked = api.hasNativeFolderPicker
     ? await api.pickFolder(rootPath ?? undefined)
     : await askFolder(await api.quickRoots(), rootPath ?? '');
@@ -395,7 +723,6 @@ $('btn-new-file').addEventListener('click', () => {
   createEntryUnder(rootPath);
 });
 
-/** Phones get the explorer as an overlay drawer, desktops as a fixed column. */
 const isNarrow = () => window.matchMedia('(max-width: 700px)').matches;
 
 function setSidebar(open) {
@@ -508,8 +835,6 @@ api.onLinuxEnvError(async (payload) => {
   await updateLinuxEnvUI();
 });
 
-// The helper key row is for soft keyboards; a DeX or desktop keyboard has all
-// these keys already, so it starts hidden there.
 const isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 $('term-keys').classList.toggle('visible', isTouchDevice);
 $('btn-term-keys').addEventListener('click', () => {
@@ -522,9 +847,27 @@ $('btn-term-keys').addEventListener('click', () => {
 window.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   if (!mod) return;
-  // Ctrl+S/W/P/N inside the terminal belong to the shell (XOFF, kill-word,
-  // previous/next history), so only the app-wide chords are taken there.
+
   const inTerminal = $('terminal').contains(e.target);
+
+  // VS Code global shortcuts
+  if (e.shiftKey) {
+    if (e.key.toLowerCase() === 'g') {
+      e.preventDefault();
+      setSidebarView('git');
+      return;
+    }
+    if (e.key.toLowerCase() === 'e') {
+      e.preventDefault();
+      setSidebarView('explorer');
+      return;
+    }
+    if (e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      setSidebarView('search');
+      return;
+    }
+  }
 
   const handlers = {
     '`': () => toggleTerminal(),
@@ -548,10 +891,12 @@ window.addEventListener('keydown', (e) => {
 async function quickOpen() {
   if (!rootPath) return setStatus('Open a folder first', true);
   const picked = await openPalette(rootPath);
-  if (picked) await openFile(picked);
+  if (picked) {
+    closeDiff();
+    await openFile(picked);
+  }
 }
 
-// Keep the app-level chords for the app instead of forwarding them to the shell.
 terminal.term.attachCustomKeyEventHandler((e) => {
   const mod = e.ctrlKey || e.metaKey;
   return !(mod && (e.key === '`' || e.key === 'b' || e.key === 'Tab'));
@@ -581,7 +926,7 @@ function makeResizer(handle, apply) {
 }
 
 makeResizer($('resizer-sidebar'), (e) => {
-  const width = Math.min(Math.max(e.clientX, 150), window.innerWidth * 0.6);
+  const width = Math.min(Math.max(e.clientX - 48, 150), window.innerWidth * 0.6);
   $('sidebar').style.width = `${width}px`;
 });
 
@@ -592,13 +937,6 @@ makeResizer($('resizer-panel'), (e) => {
   terminal.fit();
 });
 
-// ── Window resizing ──
-//
-// A Samsung DeX or desktop window can be resized to any size at any moment;
-// the panel and sidebar keep pixel sizes from dragging, so clamp them back
-// into range whenever the window changes.
-
-/** Tallest the terminal may get while still leaving the editor usable. */
 function maxPanelHeight() {
   const main = document.querySelector('.main').getBoundingClientRect().height;
   const chrome = $('toolbar').offsetHeight + $('tabbar').offsetHeight + $('resizer-panel').offsetHeight;
@@ -615,7 +953,6 @@ function clampLayout() {
 
   const sidebar = $('sidebar');
   if (isNarrow()) {
-    // The drawer sizes itself in CSS; drop any width left over from dragging.
     sidebar.style.width = '';
   } else {
     const maxSidebar = Math.max(150, window.innerWidth * 0.6);
@@ -624,7 +961,6 @@ function clampLayout() {
     }
   }
 
-  // The minimap is only worth its width on a roomy window.
   editor.updateOptions({ minimap: { enabled: window.innerWidth > 900 } });
   terminal.fit();
 }
