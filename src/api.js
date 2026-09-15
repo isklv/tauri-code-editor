@@ -142,9 +142,9 @@ export async function pickSavePath(defaultPath) {
 
 // ── Terminal ──
 
-export async function ptyStart(cwd, cols, rows) {
+export async function ptyStart(cwd, cols, rows, shellMode = null) {
   if (!isTauri) throw new Error('terminal requires the desktop app');
-  return invoke('pty_start', { cwd, cols, rows });
+  return invoke('pty_start', { cwd, cols, rows, shellMode });
 }
 
 export async function ptyWrite(data) {
@@ -172,6 +172,38 @@ export async function onPtyOutput(callback) {
 export async function onPtyExit(callback) {
   if (!isTauri) return () => {};
   return listen('pty://exit', () => callback());
+}
+
+// ── Autonomous Linux Environment (Alpine + PRoot) ──
+
+export async function getLinuxEnvStatus() {
+  if (!isTauri) return { is_installed: false, is_installing: false, arch: 'unknown', env_dir: null };
+  return invoke('get_linux_env_status');
+}
+
+export async function installLinuxEnv() {
+  if (!isTauri) throw new Error('Linux environment requires the desktop or mobile app');
+  return invoke('install_linux_env');
+}
+
+export async function removeLinuxEnv() {
+  if (!isTauri) return;
+  return invoke('remove_linux_env');
+}
+
+export async function onLinuxEnvProgress(callback) {
+  if (!isTauri) return () => {};
+  return listen('linux-env://progress', (event) => callback(event.payload));
+}
+
+export async function onLinuxEnvComplete(callback) {
+  if (!isTauri) return () => {};
+  return listen('linux-env://complete', (event) => callback(event.payload));
+}
+
+export async function onLinuxEnvError(callback) {
+  if (!isTauri) return () => {};
+  return listen('linux-env://error', (event) => callback(event.payload));
 }
 
 // ── Path helpers ──

@@ -8,6 +8,8 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+pub mod linux_env;
+
 // ── Errors ──
 
 /// Commands return plain strings so the frontend can show them directly.
@@ -375,33 +377,14 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
-/// Open a PTY and start a login-less shell in it.
-///
-/// Returns the session plus a reader for the shell's output; the caller decides
-/// what to do with that output (the app forwards it to the webview, tests read
-/// it directly).
-pub fn spawn_shell(
-    cwd: Option<&str>,
+fn spawn_with_command(
+    cmd: CommandBuilder,
     cols: u16,
     rows: u16,
 ) -> Result<(PtySession, Box<dyn Read + Send>), String> {
     let pair = native_pty_system()
         .openpty(pty_size(cols, rows))
         .map_err(err("cannot open pty"))?;
-
-    let mut cmd = CommandBuilder::new(default_shell());
-    if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
-        cmd.cwd(dir);
-        #[cfg(target_os = "android")]
-        cmd.env("HOME", dir);
-    }
-    cmd.env("TERM", "xterm-256color");
-    // An Android app process usually starts without PATH, which leaves the
-    // shell unable to find even the toybox applets.
-    #[cfg(target_os = "android")]
-    if std::env::var_os("PATH").is_none() {
-        cmd.env("PATH", "/system/bin:/system/xbin:/vendor/bin");
-    }
 
     let child = pair
         .slave
@@ -429,6 +412,55 @@ pub fn spawn_shell(
     ))
 }
 
+/// Open a PTY and start a login-less shell in it.
+///
+/// Returns the session plus a reader for the shell's output; the caller decides
+/// what to do with that output (the app forwards it to the webview, tests read
+/// it directly).
+pub fn spawn_shell(
+    cwd: Option<&str>,
+    cols: u16,
+    rows: u16,
+) -> Result<(PtySession, Box<dyn Read + Send>), String> {
+    let mut cmd = CommandBuilder::new(default_shell());
+    if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
+        cmd.cwd(dir);
+        #[cfg(target_os = "android")]
+        cmd.env("HOME", dir);
+    }
+    cmd.env("TERM", "xterm-256color");
+    // An Android app process usually starts without PATH, which leaves the
+    // shell unable to find even the toybox applets.
+    #[cfg(target_os = "android")]
+    if std::env::var_os("PATH").is_none() {
+        cmd.env("PATH", "/system/bin:/system/xbin:/vendor/bin");
+    }
+
+    spawn_with_command(cmd, cols, rows)
+}
+
+pub fn spawn_app_shell(
+    app: &AppHandle,
+    shell_mode: Option<&str>,
+    cwd: Option<&str>,
+    cols: u16,
+    rows: u16,
+) -> Result<(PtySession, Box<dyn Read + Send>), String> {
+    let use_alpine = match shell_mode {
+        Some("alpine") => true,
+        Some("native") => false,
+        _ => linux_env::is_installed(app),
+    };
+
+    if use_alpine {
+        if let Some(cmd) = linux_env::build_proot_command(app, cwd) {
+            return spawn_with_command(cmd, cols, rows);
+        }
+    }
+
+    spawn_shell(cwd, cols, rows)
+}
+
 fn default_shell() -> String {
     #[cfg(windows)]
     {
@@ -451,11 +483,13 @@ fn pty_start(
     cwd: Option<String>,
     cols: u16,
     rows: u16,
+    shell_mode: Option<String>,
 ) -> Result<(), String> {
     // Starting a second terminal replaces the first one.
     kill_session(&terminal);
 
-    let (session, mut reader) = spawn_shell(cwd.as_deref(), cols, rows)?;
+    let (session, mut reader) =
+        spawn_app_shell(&app, shell_mode.as_deref(), cwd.as_deref(), cols, rows)?;
 
     let emitter = app.clone();
     std::thread::spawn(move || {
@@ -507,6 +541,27 @@ fn pty_kill(terminal: State<'_, Arc<Terminal>>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_linux_env_status(
+    app: AppHandle,
+    state: State<'_, Arc<linux_env::InstallState>>,
+) -> linux_env::LinuxEnvStatus {
+    linux_env::get_status(&app, &state)
+}
+
+#[tauri::command]
+fn install_linux_env(
+    app: AppHandle,
+    state: State<'_, Arc<linux_env::InstallState>>,
+) -> Result<(), String> {
+    linux_env::start_install(app, state.inner().clone())
+}
+
+#[tauri::command]
+fn remove_linux_env(app: AppHandle) -> Result<(), String> {
+    linux_env::remove_env(&app)
+}
+
 // ── Setup ──
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -515,6 +570,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(Terminal::default()))
         .manage(Arc::new(FsWatcher::default()))
+        .manage(Arc::new(linux_env::InstallState::default()))
         .invoke_handler(tauri::generate_handler![
             default_root,
             quick_roots,
@@ -531,6 +587,9 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            get_linux_env_status,
+            install_linux_env,
+            remove_linux_env,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

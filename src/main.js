@@ -39,10 +39,21 @@ document.getElementById('app').innerHTML = `
       <section class="panel" id="panel">
         <div class="panel-header">
           <span>Terminal</span>
+          <button class="panel-pill" id="btn-install-linux" title="Install Alpine Linux + apk package manager">🐧 Install Linux</button>
+          <select class="panel-select" id="select-shell" style="display:none" title="Choose shell environment">
+            <option value="alpine">🐧 Alpine Linux (apk)</option>
+            <option value="native">📱 Native Shell</option>
+          </select>
           <span class="spacer"></span>
           <button class="icon-button" id="btn-term-keys" title="Toggle on-screen keys">⌨</button>
           <button class="icon-button" id="btn-restart-terminal" title="Restart shell">⟳</button>
           <button class="icon-button" id="btn-close-terminal" title="Hide terminal">×</button>
+        </div>
+        <div class="linux-progress" id="linux-progress" style="display:none">
+          <span class="linux-progress-text" id="linux-progress-text">Preparing Linux environment...</span>
+          <div class="linux-progress-bar-bg">
+            <div class="linux-progress-bar" id="linux-progress-bar"></div>
+          </div>
         </div>
         <div class="terminal-host" id="terminal"></div>
         <div class="term-keys" id="term-keys"></div>
@@ -411,7 +422,91 @@ function toggleTerminal(force) {
 
 $('btn-toggle-terminal').addEventListener('click', () => toggleTerminal());
 $('btn-close-terminal').addEventListener('click', () => toggleTerminal(true));
-$('btn-restart-terminal').addEventListener('click', () => terminal.restart(rootPath));
+$('btn-restart-terminal').addEventListener('click', () => terminal.restart(rootPath, currentShellMode));
+
+// ── Linux Environment (Alpine + PRoot) ──
+
+let currentShellMode = 'auto';
+
+async function updateLinuxEnvUI() {
+  const btnInstall = $('btn-install-linux');
+  const selectShell = $('select-shell');
+  const progressBox = $('linux-progress');
+  if (!btnInstall || !selectShell) return;
+
+  try {
+    const status = await api.getLinuxEnvStatus();
+    if (status.is_installing) {
+      btnInstall.style.display = 'none';
+      selectShell.style.display = 'none';
+      progressBox.style.display = 'flex';
+    } else if (status.is_installed) {
+      btnInstall.style.display = 'none';
+      selectShell.style.display = 'inline-block';
+      selectShell.value = currentShellMode === 'native' ? 'native' : 'alpine';
+      progressBox.style.display = 'none';
+    } else {
+      btnInstall.style.display = 'inline-flex';
+      btnInstall.textContent = '🐧 Install Linux';
+      selectShell.style.display = 'none';
+      progressBox.style.display = 'none';
+    }
+  } catch {
+    btnInstall.style.display = 'none';
+    selectShell.style.display = 'none';
+  }
+}
+
+async function triggerInstallLinux() {
+  const progressBox = $('linux-progress');
+  const progressText = $('linux-progress-text');
+  const progressBar = $('linux-progress-bar');
+  const btnInstall = $('btn-install-linux');
+
+  btnInstall.style.display = 'none';
+  progressBox.style.display = 'flex';
+  progressText.textContent = 'Downloading Alpine Linux & PRoot (~7 MB)...';
+  progressBar.style.width = '10%';
+
+  try {
+    await api.installLinuxEnv();
+  } catch (e) {
+    setStatus(`Installation failed: ${e}`, true);
+    await updateLinuxEnvUI();
+  }
+}
+
+$('btn-install-linux')?.addEventListener('click', () => triggerInstallLinux());
+
+$('select-shell')?.addEventListener('change', (e) => {
+  currentShellMode = e.target.value;
+  terminal.restart(rootPath, currentShellMode);
+});
+
+api.onLinuxEnvProgress((payload) => {
+  const progressBox = $('linux-progress');
+  const progressText = $('linux-progress-text');
+  const progressBar = $('linux-progress-bar');
+  if (progressBox) progressBox.style.display = 'flex';
+  if (progressText) progressText.textContent = `${payload.message} (${payload.percent}%)`;
+  if (progressBar) progressBar.style.width = `${payload.percent}%`;
+});
+
+api.onLinuxEnvComplete(async (payload) => {
+  const progressBox = $('linux-progress');
+  if (progressBox) progressBox.style.display = 'none';
+  setStatus(payload.message || 'Alpine Linux environment ready!');
+  currentShellMode = 'alpine';
+  await updateLinuxEnvUI();
+  await terminal.restart(rootPath, 'alpine');
+});
+
+api.onLinuxEnvError(async (payload) => {
+  const progressBox = $('linux-progress');
+  if (progressBox) progressBox.style.display = 'none';
+  setStatus(`Linux setup error: ${payload.message}`, true);
+  await updateLinuxEnvUI();
+});
 
 // The helper key row is for soft keyboards; a DeX or desktop keyboard has all
 // these keys already, so it starts hidden there.
@@ -545,7 +640,8 @@ async function init() {
   } catch (e) {
     setStatus(`Cannot determine a starting folder: ${e}`, true);
   }
-  await terminal.start(rootPath);
+  await updateLinuxEnvUI();
+  await terminal.start(rootPath, currentShellMode);
   renderTabs();
   updateStatus();
   clampLayout();

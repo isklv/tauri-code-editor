@@ -156,3 +156,41 @@ fn watching_directory_detects_changes() {
         .expect("did not receive file event");
     assert!(event.paths.iter().any(|p| p.ends_with("new_file.txt")));
 }
+
+#[test]
+fn tar_gz_unpack_works() {
+    use flate2::read::GzDecoder;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use tar::{Archive, Builder};
+
+    let dir = temp_dir("tar");
+    let mut enc = GzEncoder::new(Vec::new(), Compression::default());
+    {
+        let mut builder = Builder::new(&mut enc);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(11);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "hello.txt", &b"hello world"[..])
+            .unwrap();
+    }
+    let compressed = enc.finish().unwrap();
+
+    let tar = GzDecoder::new(&compressed[..]);
+    let mut archive = Archive::new(tar);
+    archive.unpack(&dir).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(dir.join("hello.txt")).unwrap(),
+        "hello world"
+    );
+}
+
+#[test]
+fn linux_env_target_arch_is_valid() {
+    let arch = tauri_code_editor::linux_env::target_arch();
+    assert!(!arch.is_empty());
+    assert!(["aarch64", "arm", "x86_64"].contains(&arch));
+}

@@ -129,25 +129,26 @@ export class TerminalPanel {
   }
 
   /** Spawn (or respawn) the shell. Safe to call repeatedly. */
-  async start(cwd) {
+  async start(cwd, shellMode) {
     this.cwd = cwd ?? this.cwd;
+    if (shellMode !== undefined) this.shellMode = shellMode;
     if (!isTauri) {
       this.term.writeln('\x1b[33mTerminal requires the desktop app (npm run tauri:dev).\x1b[0m');
       return;
     }
     this.fit();
     try {
-      await ptyStart(this.cwd, this.term.cols, this.term.rows);
+      await ptyStart(this.cwd, this.term.cols, this.term.rows, this.shellMode ?? null);
       this.running = true;
     } catch (e) {
       this.writeError(e);
     }
   }
 
-  async restart(cwd) {
+  async restart(cwd, shellMode) {
     this.term.reset();
     this.running = false;
-    await this.start(cwd);
+    await this.start(cwd, shellMode);
   }
 
   async dispose() {

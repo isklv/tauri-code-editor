@@ -369,6 +369,84 @@ button.tool:active {
   color: var(--fg);
 }
 
+.panel-pill {
+  background: #234974;
+  color: #cbe4ff;
+  border: 1px solid #3c78b4;
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 1px 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: none;
+  letter-spacing: normal;
+  transition: all 0.2s ease;
+}
+
+.panel-pill:hover {
+  background: #2e629c;
+  color: #fff;
+}
+
+.panel-pill.installed {
+  background: #17381e;
+  border-color: #2b6d37;
+  color: #7ee787;
+}
+
+.panel-select {
+  background: #2d3139;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 1px 6px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  outline: none;
+}
+
+.panel-select:hover {
+  border-color: #555;
+}
+
+.linux-progress {
+  padding: 5px 10px;
+  background: #25282f;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.linux-progress-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: #3c4049;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.linux-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: #0dbc79;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.linux-progress-text {
+  color: #ddd;
+  font-size: 11px;
+}
+
 .terminal-host {
   flex: 1;
   min-height: 0;
