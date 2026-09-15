@@ -30,7 +30,6 @@ const THEME = {
   brightWhite: '#ffffff',
 };
 
-/** Sequences for the on-screen helper keys. */
 const HELPER_KEYS = [
   ['Esc', '\x1b'],
   ['Tab', '\t'],
@@ -40,10 +39,14 @@ const HELPER_KEYS = [
   ['↑', '\x1b[A'],
   ['→', '\x1b[C'],
   ['^C', '\x03'],
-  ['|', '|'],
-  ['~', '~'],
   ['/', '/'],
   ['-', '-'],
+  ['_', '_'],
+  ['~', '~'],
+  ['|', '|'],
+  [':', ':'],
+  ['$', '$'],
+  ['&', '&'],
 ];
 
 export class TerminalPanel {
@@ -73,8 +76,14 @@ export class TerminalPanel {
     this.resizeObserver = new ResizeObserver(() => this.fit());
     this.resizeObserver.observe(host);
 
+    this.sessionId = null;
+
     onPtyOutput((bytes) => this.term.write(bytes));
-    onPtyExit(() => {
+    onPtyExit((exitId) => {
+      // Ignore stale exit event from previous session killed during restart
+      if (exitId && this.sessionId && exitId !== this.sessionId) {
+        return;
+      }
       this.running = false;
       this.term.writeln('\r\n\x1b[90m[shell exited — press Enter to restart]\x1b[0m');
       const once = this.term.onData(() => {
@@ -138,7 +147,7 @@ export class TerminalPanel {
     }
     this.fit();
     try {
-      await ptyStart(this.cwd, this.term.cols, this.term.rows, this.shellMode ?? null);
+      this.sessionId = await ptyStart(this.cwd, this.term.cols, this.term.rows, this.shellMode ?? null);
       this.running = true;
     } catch (e) {
       this.writeError(e);

@@ -38,23 +38,25 @@ body {
 }
 
 #app {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  /* Android runs the webview edge-to-edge, so keep the chrome clear of the
-     system status/navigation bars. On desktop these all resolve to 0. */
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   padding-top: env(safe-area-inset-top);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
 
 .workbench {
-  display: flex;
+  flex: 1;
   min-height: 0;
+  display: flex;
   overflow: hidden;
   position: relative;
 }
 
-/* ── Activity Bar (VS Code style left rail) ── */
+/* ── Activity Bar (VS Code style desktop left rail) ── */
 
 .activity-bar {
   width: 48px;
@@ -128,8 +130,8 @@ body {
   display: none;
   position: absolute;
   inset: 0;
-  background: #00000066;
-  z-index: 40;
+  background: #00000088;
+  z-index: 65;
 }
 
 /* ── Sidebar ── */
@@ -150,26 +152,28 @@ body:not(.sidebar-open) .resizer-v {
   display: none;
 }
 
-/* Phone layout: the sidebar slides over the editor starting next to activity bar */
+/* Phone layout: activity bar transforms to bottom nav; sidebar is a smooth sliding drawer */
 @media (max-width: 700px) {
   .activity-bar {
-    width: 42px;
-  }
-
-  .activity-item {
-    width: 42px;
-    height: 42px;
+    display: none;
   }
 
   .sidebar {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 42px;
-    z-index: 50;
-    width: min(calc(100vw - 42px), 300px);
+    left: 0;
+    z-index: 70;
+    width: min(85vw, 320px);
     max-width: none;
-    box-shadow: 4px 0 16px #00000066;
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.7);
+    transform: translateX(-100%);
+    transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.4, 1);
+  }
+
+  body.sidebar-open .sidebar {
+    display: flex;
+    transform: translateX(0);
   }
 
   body:not(.sidebar-open) .sidebar {
@@ -179,16 +183,11 @@ body:not(.sidebar-open) .resizer-v {
 
   body.sidebar-open .scrim {
     display: block;
-    left: 42px;
+    left: 0;
   }
 
   .resizer-v {
     display: none;
-  }
-
-  .toolbar {
-    overflow-x: auto;
-    scrollbar-width: none;
   }
 }
 
@@ -299,67 +298,272 @@ body:not(.sidebar-open) .resizer-v {
   overflow: hidden;
 }
 
-.toolbar {
+/* ── Topbar (Modern Titlebar & Command Bar) ── */
+
+.topbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: var(--bg-tab);
+  justify-content: space-between;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px;
+  background: #181818;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  z-index: 30;
+}
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-button.tool {
-  background: #3a3d41;
-  border: 1px solid transparent;
-  color: var(--fg);
-  font: inherit;
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 3px;
+.topbar-center {
+  flex: 1;
+  max-width: 480px;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.topbar-btn {
+  width: 32px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: #999;
+  background: transparent;
+  border: none;
   cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
 }
 
-button.tool:hover {
-  background: #4a4d51;
+.topbar-btn:hover {
+  background: #2a2d2e;
+  color: #fff;
 }
 
-button.tool:active {
-  background: var(--accent);
+.topbar-btn:active {
+  background: #37373d;
 }
+
+.topbar-workspace-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #252526;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  max-width: 180px;
+  transition: all 0.15s ease;
+}
+
+.topbar-workspace-btn:hover {
+  background: #2e2e30;
+  border-color: #505050;
+}
+
+.topbar-ws-icon {
+  display: flex;
+  align-items: center;
+  color: #dcb67a;
+}
+
+.topbar-ws-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-ws-chevron {
+  display: flex;
+  align-items: center;
+  color: var(--fg-dim);
+}
+
+.quick-open-pill {
+  width: 100%;
+  max-width: 440px;
+  height: 28px;
+  background: #222222;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 8px;
+  cursor: pointer;
+  color: #888888;
+  font-family: inherit;
+  font-size: 12px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.quick-open-pill:hover {
+  background: #2a2a2a;
+  border-color: #484848;
+  color: #cccccc;
+}
+
+.quick-open-pill:active {
+  border-color: var(--accent);
+}
+
+.quick-open-icon {
+  display: flex;
+  align-items: center;
+  color: #888888;
+  flex-shrink: 0;
+}
+
+.quick-open-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.quick-open-text {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-open-kbd {
+  font-family: var(--mono-font);
+  font-size: 10px;
+  background: #2c2c2c;
+  color: #999;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #3c3c3c;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.topbar-linux-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.topbar-linux-badge.installed {
+  background: #14331e;
+  border-color: #276936;
+  color: #7ee787;
+}
+
+.topbar-linux-badge.not-installed {
+  background: #1e3550;
+  border-color: #2c5885;
+  color: #8cc4ff;
+}
+
+.topbar-linux-badge.installing {
+  background: #3b2c14;
+  border-color: #755523;
+  color: #f1cf87;
+}
+
+.topbar-linux-badge:hover {
+  filter: brightness(1.15);
+}
+
+@media (max-width: 700px) {
+  .topbar {
+    height: 42px;
+    padding: 0 6px;
+    gap: 6px;
+  }
+
+  .topbar-workspace-btn {
+    max-width: 110px;
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  .quick-open-kbd {
+    display: none;
+  }
+
+  .topbar-linux-badge {
+    display: none;
+  }
+
+  .quick-open-pill {
+    padding: 0 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-workspace-btn {
+    display: none;
+  }
+}
+
+/* ── Tabs bar ── */
 
 .tabbar {
   display: flex;
   height: 35px;
-  background: var(--bg-tab);
+  background: #161616;
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
   flex-shrink: 0;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+.tabbar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: 12px;
-  color: #969696;
-  background: var(--bg-tab);
+  color: #8c8c8c;
+  background: #181818;
   border-right: 1px solid var(--border);
+  border-top: 2px solid transparent;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  transition: color 0.1s ease, background 0.1s ease;
 }
 
 .tab:hover {
-  background: #333;
+  background: #1e1e1e;
+  color: #d4d4d4;
 }
 
 .tab.active {
   background: var(--bg);
-  color: #e7e7e7;
+  color: #ffffff;
+  border-top-color: var(--accent);
 }
 
 .tab .close {
@@ -533,6 +737,90 @@ button.tool:active {
   overflow: hidden;
 }
 
+/* ── Mobile Bottom Navigation Bar ── */
+
+.mobile-nav {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .mobile-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: 52px;
+    background: #141414;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 55;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .mobile-nav-item {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    color: #888888;
+    cursor: pointer;
+    font-family: var(--ui-font);
+    font-size: 10px;
+    font-weight: 500;
+    position: relative;
+    padding: 4px 0;
+    touch-action: manipulation;
+    transition: color 0.15s ease;
+  }
+
+  .mobile-nav-item:active,
+  .mobile-nav-item.active {
+    color: #ffffff;
+  }
+
+  .mobile-nav-item.active .mobile-nav-icon {
+    color: var(--accent);
+  }
+
+  .mobile-nav-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .mobile-nav-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .mobile-badge {
+    position: absolute;
+    top: -4px;
+    right: -8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    min-width: 14px;
+    height: 14px;
+    line-height: 14px;
+    text-align: center;
+    border-radius: 7px;
+    padding: 0 3px;
+  }
+
+  #status-encoding,
+  #status-indent,
+  #status-language {
+    display: none;
+  }
+}
+
 /* ── Status bar ── */
 
 .statusbar {
@@ -607,12 +895,13 @@ button.statusbar-item:hover {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: #00000080;
+  background: #00000099;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 15vh;
+  padding: 12px;
   z-index: 100;
+  backdrop-filter: blur(2px);
 }
 
 .modal-backdrop[hidden] {
@@ -622,10 +911,12 @@ button.statusbar-item:hover {
 .modal {
   background: var(--bg-alt);
   border: 1px solid #454545;
-  border-radius: 6px;
-  box-shadow: 0 8px 30px #00000080;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #00000099;
   padding: 16px;
-  width: min(420px, 90vw);
+  width: min(440px, 94vw);
+  max-height: 85vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -755,13 +1046,18 @@ button.tool.primary:hover {
 
 .term-keys {
   display: none;
-  gap: 4px;
-  padding: 4px 6px;
-  background: var(--bg-tab);
+  gap: 5px;
+  padding: 5px 8px;
+  background: #141414;
   border-top: 1px solid var(--border);
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   flex-shrink: 0;
+}
+
+.term-keys::-webkit-scrollbar {
+  display: none;
 }
 
 .term-keys.visible {
@@ -769,24 +1065,35 @@ button.tool.primary:hover {
 }
 
 .term-key {
-  background: #3a3d41;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--fg);
+  background: #25282e;
+  border: 1px solid #3c4048;
+  border-radius: 5px;
+  color: #e0e0e0;
   font-family: var(--mono-font);
   font-size: 13px;
-  min-width: 40px;
-  padding: 7px 8px;
+  font-weight: 500;
+  min-width: 38px;
+  height: 35px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
+  touch-action: manipulation;
+  user-select: none;
+  transition: background 0.1s ease, transform 0.05s ease;
 }
 
 .term-key:active {
   background: var(--accent);
+  color: #fff;
+  transform: scale(0.95);
 }
 
 .term-key.sticky {
   background: var(--accent);
+  border-color: #3b93d8;
   color: #fff;
 }
 

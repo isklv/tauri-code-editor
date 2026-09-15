@@ -171,7 +171,7 @@ export async function onPtyOutput(callback) {
 /** Subscribe to shell exit. */
 export async function onPtyExit(callback) {
   if (!isTauri) return () => {};
-  return listen('pty://exit', () => callback());
+  return listen('pty://exit', (event) => callback(event.payload));
 }
 
 // ── Autonomous Linux Environment (Alpine + PRoot) ──

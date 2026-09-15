@@ -14,7 +14,7 @@ import { getFileIconHtml, SVG_ICONS } from './icons.js';
 
 document.getElementById('app').innerHTML = `
   <div class="workbench">
-    <!-- Activity Bar (VS Code style left rail) -->
+    <!-- Desktop Activity Bar (VS Code style left rail) -->
     <nav class="activity-bar" id="activity-bar">
       <div class="activity-top">
         <button class="activity-item active" id="act-explorer" data-view="explorer" title="Explorer (Ctrl+Shift+E)">
@@ -79,14 +79,42 @@ document.getElementById('app').innerHTML = `
     <div class="scrim" id="scrim"></div>
 
     <main class="main">
-      <div class="toolbar" id="toolbar">
-        <button class="tool" id="btn-menu" title="Toggle explorer (Ctrl+B)">☰</button>
-        <button class="tool" id="btn-open">Open Folder</button>
-        <button class="tool" id="btn-save">Save</button>
-        <button class="tool" id="btn-goto">Go to File</button>
-        <button class="tool" id="btn-clone-toolbar" title="Clone repository from GitHub">GitHub Clone...</button>
-        <button class="tool" id="btn-toggle-terminal">Terminal</button>
-      </div>
+      <!-- Sleek Modern Header / Command Bar -->
+      <header class="topbar" id="topbar">
+        <div class="topbar-left">
+          <button class="icon-button topbar-btn" id="btn-menu" title="Toggle Sidebar (Ctrl+B)">
+            ${SVG_ICONS.menu}
+          </button>
+          <button class="topbar-workspace-btn" id="btn-open" title="Open folder">
+            <span class="topbar-ws-icon">${SVG_ICONS.folder}</span>
+            <span class="topbar-ws-title" id="topbar-root-name">Open Folder</span>
+            <span class="topbar-ws-chevron">${SVG_ICONS.chevronDown}</span>
+          </button>
+        </div>
+
+        <div class="topbar-center">
+          <button class="quick-open-pill" id="btn-goto" title="Search files (Ctrl+P)">
+            <span class="quick-open-icon">${SVG_ICONS.search}</span>
+            <span class="quick-open-text" id="quick-open-label">Go to file...</span>
+            <kbd class="quick-open-kbd">Ctrl P</kbd>
+          </button>
+        </div>
+
+        <div class="topbar-right">
+          <button class="icon-button topbar-btn" id="btn-save" title="Save file (Ctrl+S)">
+            ${SVG_ICONS.save}
+          </button>
+          <button class="icon-button topbar-btn" id="btn-toggle-terminal" title="Toggle Terminal (Ctrl+\`)">
+            ${SVG_ICONS.terminal}
+          </button>
+          <button class="icon-button topbar-btn" id="btn-clone-toolbar" title="GitHub Clone & Repos">
+            ${SVG_ICONS.github}
+          </button>
+          <button class="topbar-linux-badge not-installed" id="topbar-linux-badge" title="Linux Environment">
+            🐧 <span id="topbar-linux-text">Linux</span>
+          </button>
+        </div>
+      </header>
 
       <div class="tabbar" id="tabbar"></div>
 
@@ -129,6 +157,33 @@ document.getElementById('app').innerHTML = `
       </section>
     </main>
   </div>
+
+  <!-- Mobile Bottom Navigation Bar (Thumb-friendly, visible on <= 700px) -->
+  <nav class="mobile-nav" id="mobile-nav">
+    <button class="mobile-nav-item active" id="mob-act-explorer" data-view="explorer" title="Files">
+      <span class="mobile-nav-icon">${SVG_ICONS.explorer}</span>
+      <span class="mobile-nav-label">Files</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-act-search" data-view="search" title="Search">
+      <span class="mobile-nav-icon">${SVG_ICONS.search}</span>
+      <span class="mobile-nav-label">Search</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-act-git" data-view="git" title="Git">
+      <span class="mobile-nav-icon">
+        ${SVG_ICONS.git}
+        <span class="mobile-badge" id="mob-git-badge" style="display:none">0</span>
+      </span>
+      <span class="mobile-nav-label">Git</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-act-terminal" title="Terminal">
+      <span class="mobile-nav-icon">${SVG_ICONS.terminal}</span>
+      <span class="mobile-nav-label">Terminal</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-act-github" title="GitHub">
+      <span class="mobile-nav-icon">${SVG_ICONS.github}</span>
+      <span class="mobile-nav-label">GitHub</span>
+    </button>
+  </nav>
 
   <footer class="statusbar">
     <button class="statusbar-item statusbar-git" id="status-git-branch" style="display:none;" title="Git Branch (click to switch or create)">
@@ -228,13 +283,14 @@ setInterval(() => {
 // ── Activity Bar Navigation ──
 
 function setSidebarView(viewName) {
-  if (currentView === viewName && document.body.classList.contains('sidebar-open')) {
+  const isOpen = document.body.classList.contains('sidebar-open');
+  if (currentView === viewName && isOpen) {
     setSidebar(false);
     return;
   }
 
   currentView = viewName;
-  document.querySelectorAll('.activity-item[data-view]').forEach((el) => {
+  document.querySelectorAll('.activity-item[data-view], .mobile-nav-item[data-view]').forEach((el) => {
     el.classList.toggle('active', el.getAttribute('data-view') === viewName);
   });
 
@@ -258,6 +314,31 @@ $('act-git')?.addEventListener('click', () => setSidebarView('git'));
 $('act-terminal')?.addEventListener('click', () => toggleTerminal());
 $('act-github')?.addEventListener('click', () => gitPanel.showGitHubModal());
 $('btn-clone-toolbar')?.addEventListener('click', () => gitPanel.showCloneModal());
+
+// Mobile Bottom Nav handlers
+$('mob-act-explorer')?.addEventListener('click', () => {
+  if (currentView === 'explorer' && document.body.classList.contains('sidebar-open')) {
+    setSidebar(false);
+  } else {
+    setSidebarView('explorer');
+  }
+});
+$('mob-act-search')?.addEventListener('click', () => {
+  if (currentView === 'search' && document.body.classList.contains('sidebar-open')) {
+    setSidebar(false);
+  } else {
+    setSidebarView('search');
+  }
+});
+$('mob-act-git')?.addEventListener('click', () => {
+  if (currentView === 'git' && document.body.classList.contains('sidebar-open')) {
+    setSidebar(false);
+  } else {
+    setSidebarView('git');
+  }
+});
+$('mob-act-terminal')?.addEventListener('click', () => toggleTerminal());
+$('mob-act-github')?.addEventListener('click', () => gitPanel.showGitHubModal());
 
 // ── Search View Implementation ──
 
@@ -372,6 +453,7 @@ function updateGitStatus(status) {
   const syncPill = $('status-git-sync');
   const syncCounts = $('status-sync-counts');
   const gitBadge = $('git-badge');
+  const mobBadge = $('mob-git-badge');
 
   if (status && status.is_repo) {
     branchPill.style.display = 'inline-flex';
@@ -381,15 +463,24 @@ function updateGitStatus(status) {
 
     const count = status.total_changes;
     if (count > 0) {
-      gitBadge.style.display = 'block';
-      gitBadge.textContent = count > 99 ? '99+' : String(count);
+      const text = count > 99 ? '99+' : String(count);
+      if (gitBadge) {
+        gitBadge.style.display = 'block';
+        gitBadge.textContent = text;
+      }
+      if (mobBadge) {
+        mobBadge.style.display = 'block';
+        mobBadge.textContent = text;
+      }
     } else {
-      gitBadge.style.display = 'none';
+      if (gitBadge) gitBadge.style.display = 'none';
+      if (mobBadge) mobBadge.style.display = 'none';
     }
   } else {
     branchPill.style.display = 'none';
     syncPill.style.display = 'none';
-    gitBadge.style.display = 'none';
+    if (gitBadge) gitBadge.style.display = 'none';
+    if (mobBadge) mobBadge.style.display = 'none';
   }
 }
 
@@ -595,7 +686,10 @@ async function openFolder(path) {
     return false;
   }
   rootPath = path;
-  $('root-name').textContent = api.basename(path) || path;
+  const name = api.basename(path) || path;
+  $('root-name').textContent = name;
+  if ($('topbar-root-name')) $('topbar-root-name').textContent = name;
+  if ($('quick-open-label')) $('quick-open-label').textContent = `${name} — Go to file...`;
   $('root-path').textContent = path;
   $('root-path').title = path;
   if (activePath) tree.setActive(activePath);
@@ -727,7 +821,18 @@ const isNarrow = () => window.matchMedia('(max-width: 700px)').matches;
 
 function setSidebar(open) {
   document.body.classList.toggle('sidebar-open', open);
-  if (!open) editor.focus();
+  if (!open) {
+    editor.focus();
+    if (isNarrow()) {
+      document.querySelectorAll('.mobile-nav-item[data-view]').forEach((el) => {
+        el.classList.remove('active');
+      });
+    }
+  } else if (isNarrow()) {
+    document.querySelectorAll('.mobile-nav-item[data-view]').forEach((el) => {
+      el.classList.toggle('active', el.getAttribute('data-view') === currentView);
+    });
+  }
 }
 
 $('btn-menu').addEventListener('click', () => setSidebar(!document.body.classList.contains('sidebar-open')));
@@ -740,6 +845,9 @@ function toggleTerminal(force) {
   panel.classList.toggle('hidden', hide);
   resizer.classList.toggle('hidden', hide);
   if (!hide) {
+    if (isNarrow()) {
+      panel.style.height = '42vh';
+    }
     terminal.fit();
     terminal.focus();
   } else {
@@ -759,6 +867,8 @@ async function updateLinuxEnvUI() {
   const btnInstall = $('btn-install-linux');
   const selectShell = $('select-shell');
   const progressBox = $('linux-progress');
+  const topbarBadge = $('topbar-linux-badge');
+  const topbarText = $('topbar-linux-text');
   if (!btnInstall || !selectShell) return;
 
   try {
@@ -767,16 +877,31 @@ async function updateLinuxEnvUI() {
       btnInstall.style.display = 'none';
       selectShell.style.display = 'none';
       progressBox.style.display = 'flex';
+      if (topbarBadge) {
+        topbarBadge.style.display = 'inline-flex';
+        topbarBadge.className = 'topbar-linux-badge installing';
+        if (topbarText) topbarText.textContent = 'Installing…';
+      }
     } else if (status.is_installed) {
       btnInstall.style.display = 'none';
       selectShell.style.display = 'inline-block';
       selectShell.value = currentShellMode === 'native' ? 'native' : 'alpine';
       progressBox.style.display = 'none';
+      if (topbarBadge) {
+        topbarBadge.style.display = 'inline-flex';
+        topbarBadge.className = 'topbar-linux-badge installed';
+        if (topbarText) topbarText.textContent = 'Alpine';
+      }
     } else {
       btnInstall.style.display = 'inline-flex';
       btnInstall.textContent = '🐧 Install Linux';
       selectShell.style.display = 'none';
       progressBox.style.display = 'none';
+      if (topbarBadge) {
+        topbarBadge.style.display = 'inline-flex';
+        topbarBadge.className = 'topbar-linux-badge not-installed';
+        if (topbarText) topbarText.textContent = 'Install Linux';
+      }
     }
   } catch {
     btnInstall.style.display = 'none';
@@ -804,6 +929,18 @@ async function triggerInstallLinux() {
 }
 
 $('btn-install-linux')?.addEventListener('click', () => triggerInstallLinux());
+$('topbar-linux-badge')?.addEventListener('click', async () => {
+  try {
+    const status = await api.getLinuxEnvStatus();
+    if (status.is_installed) {
+      toggleTerminal(false);
+    } else if (!status.is_installing) {
+      triggerInstallLinux();
+    }
+  } catch {
+    toggleTerminal(false);
+  }
+});
 
 $('select-shell')?.addEventListener('change', (e) => {
   currentShellMode = e.target.value;
@@ -939,8 +1076,8 @@ makeResizer($('resizer-panel'), (e) => {
 
 function maxPanelHeight() {
   const main = document.querySelector('.main').getBoundingClientRect().height;
-  const chrome = $('toolbar').offsetHeight + $('tabbar').offsetHeight + $('resizer-panel').offsetHeight;
-  const MIN_EDITOR = 120;
+  const chrome = ($('topbar')?.offsetHeight || 38) + ($('tabbar')?.offsetHeight || 35) + ($('resizer-panel')?.offsetHeight || 4);
+  const MIN_EDITOR = 100;
   return Math.max(60, main - chrome - MIN_EDITOR);
 }
 
@@ -952,7 +1089,8 @@ function clampLayout() {
   }
 
   const sidebar = $('sidebar');
-  if (isNarrow()) {
+  const narrow = isNarrow();
+  if (narrow) {
     sidebar.style.width = '';
   } else {
     const maxSidebar = Math.max(150, window.innerWidth * 0.6);
@@ -961,7 +1099,18 @@ function clampLayout() {
     }
   }
 
-  editor.updateOptions({ minimap: { enabled: window.innerWidth > 900 } });
+  editor.updateOptions({
+    minimap: { enabled: !narrow && window.innerWidth > 900 },
+    glyphMargin: !narrow,
+    folding: !narrow,
+    lineNumbersMinChars: narrow ? 3 : 5,
+    lineDecorationsWidth: narrow ? 4 : 10,
+  });
+
+  diffEditor.updateOptions({
+    renderSideBySide: window.innerWidth > 750,
+  });
+
   terminal.fit();
 }
 

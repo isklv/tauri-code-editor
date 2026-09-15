@@ -222,6 +222,9 @@ fn run_install(app: &AppHandle) -> Result<(), String> {
         .unpack(&rootfs_path)
         .map_err(|e| format!("failed to extract rootfs to {}: {e}", rootfs_path.display()))?;
 
+    #[cfg(unix)]
+    fix_rootfs_permissions(&rootfs_path);
+
     // 4. Configure DNS (resolv.conf)
     emit_progress(
         app,
@@ -279,6 +282,33 @@ EOF
     Ok(())
 }
 
+#[cfg(unix)]
+fn fix_rootfs_permissions(rootfs: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let subs = [
+        "bin",
+        "sbin",
+        "usr/bin",
+        "usr/sbin",
+        "lib",
+        "usr/lib",
+        "etc/profile.d",
+    ];
+    for sub in subs {
+        let dir = rootfs.join(sub);
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    let mut perms = meta.permissions();
+                    let mode = perms.mode();
+                    perms.set_mode(mode | 0o755);
+                    let _ = fs::set_permissions(entry.path(), perms);
+                }
+            }
+        }
+    }
+}
+
 pub fn remove_env(app: &AppHandle) -> Result<(), String> {
     let env_path = env_dir(app)?;
     if env_path.exists() {
@@ -297,29 +327,55 @@ pub fn build_proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command
         return None;
     }
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&proot, fs::Permissions::from_mode(0o755));
+        fix_rootfs_permissions(&rootfs);
+    }
+
     let mut cmd = CommandBuilder::new(proot);
 
-    // Mount virtual kernel filesystems
-    cmd.args(["-b", "/dev", "-b", "/proc", "-b", "/sys"]);
+    #[cfg(target_os = "android")]
+    cmd.arg("--link2symlink");
 
-    // Bind Android internal/external storage so user project files are accessible
+    cmd.arg("-0");
+    cmd.args(["-r", &rootfs.to_string_lossy()]);
+
+    // Virtual kernel filesystems: bind dev and proc (skip /sys on Android due to SELinux)
+    cmd.args(["-b", "/dev", "-b", "/proc"]);
+    #[cfg(not(target_os = "android"))]
+    if Path::new("/sys").exists() {
+        cmd.args(["-b", "/sys"]);
+    }
+
+    // Mount storage and host directories so files can be accessed
     if Path::new("/storage").exists() {
         cmd.args(["-b", "/storage"]);
     }
     if Path::new("/sdcard").exists() {
         cmd.args(["-b", "/sdcard"]);
     }
-
-    // Bind rootfs as the root directory
-    cmd.args(["-r", &rootfs.to_string_lossy()]);
-
-    // Fake root (uid 0) so apk can install packages without permission errors
-    cmd.arg("-0");
-
-    // Working directory
-    if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
-        cmd.args(["-w", dir]);
+    if Path::new("/data").exists() {
+        cmd.args(["-b", "/data"]);
     }
+    if Path::new("/home").exists() {
+        cmd.args(["-b", "/home"]);
+    }
+    if Path::new("/tmp").exists() {
+        cmd.args(["-b", "/tmp"]);
+    }
+
+    // Bind working directory specifically if not already within standard mounts
+    let mut target_dir = "/root".to_string();
+    if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
+        let p = Path::new(dir);
+        if p.exists() {
+            cmd.args(["-b", &format!("{dir}:{dir}")]);
+            target_dir = dir.to_string();
+        }
+    }
+    cmd.args(["-w", &target_dir]);
 
     cmd.env("TERM", "xterm-256color");
     cmd.env("HOME", "/root");

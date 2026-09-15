@@ -367,6 +367,7 @@ impl PtySession {
 #[derive(Default)]
 struct Terminal {
     session: Mutex<Option<PtySession>>,
+    session_id: std::sync::atomic::AtomicU64,
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -455,7 +456,12 @@ pub fn spawn_app_shell(
 
     if use_alpine {
         if let Some(cmd) = linux_env::build_proot_command(app, cwd) {
-            return spawn_with_command(cmd, cols, rows);
+            match spawn_with_command(cmd, cols, rows) {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    eprintln!("PRoot spawn failed: {e}; falling back to native shell");
+                }
+            }
         }
     }
 
@@ -485,8 +491,12 @@ fn pty_start(
     cols: u16,
     rows: u16,
     shell_mode: Option<String>,
-) -> Result<(), String> {
-    // Starting a second terminal replaces the first one.
+) -> Result<u64, String> {
+    // Generate a fresh session ID before killing old session so late exit events from the previous shell are ignored
+    let id = terminal
+        .session_id
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        + 1;
     kill_session(&terminal);
 
     let (session, mut reader) =
@@ -505,11 +515,11 @@ fn pty_start(
                 }
             }
         }
-        let _ = emitter.emit("pty://exit", ());
+        let _ = emitter.emit("pty://exit", id);
     });
 
     *terminal.session.lock().unwrap() = Some(session);
-    Ok(())
+    Ok(id)
 }
 
 #[tauri::command]
