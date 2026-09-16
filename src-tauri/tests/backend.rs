@@ -269,6 +269,30 @@ fn proot_arguments_root_the_shell_in_the_alpine_filesystem() {
 }
 
 #[test]
+fn proot_always_starts_from_a_directory_that_exists_on_the_host() {
+    use std::path::PathBuf;
+    use tauri_code_editor::linux_env::host_start_dir;
+
+    let project = temp_dir("linux-env-project-dir");
+    let app_data = temp_dir("linux-env-app-data");
+
+    assert_eq!(host_start_dir(None, project.to_str()), project);
+
+    // PRoot itself runs on the host, so a project folder that is gone must never
+    // reach the spawn: it fails with "No such file or directory" before PRoot
+    // has a chance to enter the rootfs.
+    assert_eq!(
+        host_start_dir(Some(app_data.clone()), Some("/no/such/project")),
+        app_data
+    );
+    assert_eq!(
+        host_start_dir(Some(PathBuf::from("/no/such/dir")), Some("")),
+        PathBuf::from("/")
+    );
+    assert_eq!(host_start_dir(None, None), PathBuf::from("/"));
+}
+
+#[test]
 fn git_porcelain_parsing_categorizes_correctly() {
     use tauri_code_editor::git::parse_porcelain_status;
     let root = std::path::Path::new("/dummy/repo");

@@ -5,7 +5,7 @@
 //! compilers, and runtimes without root privileges or external apps like Termux.
 
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -42,6 +42,14 @@ pub struct ProgressPayload {
 #[derive(Serialize, Clone, Debug)]
 pub struct SimpleMessagePayload {
     pub message: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct CompletePayload {
+    pub message: String,
+    /// The environment works, but something in it needs attention — the setup
+    /// log stays on screen so the user can see what.
+    pub warning: bool,
 }
 
 #[derive(Default)]
@@ -179,11 +187,18 @@ pub fn start_install(app: AppHandle, state: Arc<InstallState>) -> Result<(), Str
 
         match result {
             Ok(note) => {
-                let message = match note {
-                    Some(warning) => format!("Alpine Linux ready, but {warning}"),
-                    None => "Alpine Linux environment ready! Open terminal to start.".to_string(),
+                let payload = match note {
+                    Some(warning) => CompletePayload {
+                        message: format!("Alpine Linux ready, but {warning}"),
+                        warning: true,
+                    },
+                    None => CompletePayload {
+                        message: "Alpine Linux environment ready! Open terminal to start."
+                            .to_string(),
+                        warning: false,
+                    },
                 };
-                let _ = emitter.emit("linux-env://complete", SimpleMessagePayload { message });
+                let _ = emitter.emit("linux-env://complete", payload);
             }
             Err(e) => {
                 let _ = emitter.emit("linux-env://error", SimpleMessagePayload { message: e });
@@ -192,6 +207,20 @@ pub fn start_install(app: AppHandle, state: Arc<InstallState>) -> Result<(), Str
     });
 
     Ok(())
+}
+
+/// Append one line to the setup log the terminal panel shows. Progress percentages
+/// say how far along the install is; these lines say what it is actually doing,
+/// which is what makes a stuck or failed install diagnosable.
+pub fn emit_log(app: &AppHandle, line: impl AsRef<str>) {
+    let line = line.as_ref();
+    eprintln!("linux-env: {line}");
+    let _ = app.emit(
+        "linux-env://log",
+        SimpleMessagePayload {
+            message: line.to_string(),
+        },
+    );
 }
 
 fn emit_progress(app: &AppHandle, step: &str, message: &str, percent: u32) {
@@ -207,7 +236,7 @@ fn emit_progress(app: &AppHandle, step: &str, message: &str, percent: u32) {
 
 /// Download `url` into `dest`, writing through a `.part` file so an interrupted
 /// transfer can never leave a truncated binary behind.
-fn download_to(url: &str, dest: &Path) -> Result<(), String> {
+fn download_to(url: &str, dest: &Path) -> Result<u64, String> {
     // A stalled transfer must fail so the caller can retry, rather than leaving
     // the install spinning forever on a dead connection.
     const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
@@ -238,12 +267,15 @@ fn download_to(url: &str, dest: &Path) -> Result<(), String> {
         let _ = fs::remove_file(&part);
         return Err(format!("download from {url} produced an empty file"));
     }
-    fs::rename(&part, dest).map_err(|e| format!("cannot finish writing {}: {e}", dest.display()))
+    fs::rename(&part, dest)
+        .map_err(|e| format!("cannot finish writing {}: {e}", dest.display()))?;
+    Ok(size)
 }
 
 /// Try each URL, a few times each: a phone switching between Wi-Fi and mobile
 /// data drops transfers often enough that one failed attempt means little.
 fn download_first_working(
+    app: &AppHandle,
     urls: &[String],
     dest: &Path,
     verify: impl Fn(&Path) -> Result<(), String>,
@@ -251,14 +283,21 @@ fn download_first_working(
     const ATTEMPTS_PER_URL: u32 = 3;
     let mut last_error = String::from("no download source available");
     for url in urls {
-        for attempt in 0..ATTEMPTS_PER_URL {
-            match download_to(url, dest).and_then(|()| verify(dest)) {
-                Ok(()) => return Ok(()),
+        for attempt in 1..=ATTEMPTS_PER_URL {
+            emit_log(app, format!("GET {url} (attempt {attempt})"));
+            match download_to(url, dest).and_then(|size| verify(dest).map(|()| size)) {
+                Ok(size) => {
+                    emit_log(
+                        app,
+                        format!("saved {} ({})", dest.display(), human_size(size)),
+                    );
+                    return Ok(());
+                }
                 Err(e) => {
-                    eprintln!("linux-env: attempt {} for {url} failed: {e}", attempt + 1);
+                    emit_log(app, format!("failed: {e}"));
                     let _ = fs::remove_file(dest);
                     last_error = e;
-                    if attempt + 1 < ATTEMPTS_PER_URL {
+                    if attempt < ATTEMPTS_PER_URL {
                         std::thread::sleep(std::time::Duration::from_secs(2));
                     }
                 }
@@ -266,6 +305,14 @@ fn download_first_working(
         }
     }
     Err(last_error)
+}
+
+fn human_size(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    }
 }
 
 #[cfg(unix)]
@@ -333,9 +380,17 @@ fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
     fs::create_dir_all(&tmp_path)
         .map_err(|e| format!("cannot create temp directory {}: {e}", tmp_path.display()))?;
 
+    emit_log(
+        app,
+        format!(
+            "installing Alpine {ALPINE_RELEASE} for {arch} into {}",
+            env_path.display()
+        ),
+    );
+
     // 1. Download PRoot binary
     emit_progress(app, "proot", "Downloading PRoot binary (~3 MB)...", 10);
-    download_first_working(&proot_urls(arch), &proot_path, verify_proot)
+    download_first_working(app, &proot_urls(arch), &proot_path, verify_proot)
         .map_err(|e| format!("could not set up PRoot for {arch}: {e}"))?;
 
     // 2. Download Alpine Linux rootfs
@@ -346,7 +401,7 @@ fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
         35,
     );
     let archive_path = env_path.join("alpine-rootfs.tar.gz");
-    download_first_working(&alpine_urls(arch), &archive_path, verify_gzip)
+    download_first_working(app, &alpine_urls(arch), &archive_path, verify_gzip)
         .map_err(|e| format!("could not download Alpine rootfs: {e}"))?;
 
     // 3. Extract rootfs
@@ -356,6 +411,7 @@ fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
         "Extracting Alpine Linux filesystem...",
         55,
     );
+    emit_log(app, "unpacking the root filesystem");
     let archive_file = fs::File::open(&archive_path)
         .map_err(|e| format!("cannot open {}: {e}", archive_path.display()))?;
     let gz = GzDecoder::new(archive_file);
@@ -377,6 +433,10 @@ fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
         70,
     );
     configure_rootfs(&rootfs_path)?;
+    emit_log(
+        app,
+        "wrote resolv.conf, apk repositories and the welcome banner",
+    );
 
     // The environment is usable from here on; the package bootstrap below is a
     // convenience, so a slow mirror must not leave the install marked unfinished.
@@ -391,15 +451,19 @@ fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
         85,
     );
     let warning = match bootstrap_packages(app) {
-        Ok(()) => None,
+        Ok(()) => {
+            emit_log(app, "package index updated, git installed");
+            None
+        }
         Err(e) => {
-            eprintln!("Alpine package bootstrap failed: {e}");
+            emit_log(app, format!("package setup failed: {e}"));
             Some(format!(
                 "package setup failed: {e}. Run `apk update` in the terminal."
             ))
         }
     };
 
+    emit_log(app, "environment ready");
     emit_progress(app, "done", "Alpine Linux environment ready!", 100);
     Ok(warning)
 }
@@ -479,21 +543,28 @@ EOF
 /// first `apk add` in the terminal does not have to bootstrap anything itself.
 fn bootstrap_packages(app: &AppHandle) -> Result<(), String> {
     const BOOTSTRAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
-
-    let log_path = proot_tmp_dir(app)?.join("bootstrap.log");
-    let log = fs::File::create(&log_path)
-        .map_err(|e| format!("cannot create {}: {e}", log_path.display()))?;
-    let log_err = log
-        .try_clone()
-        .map_err(|e| format!("cannot open bootstrap log: {e}"))?;
+    const COMMAND: &str = "apk update && apk add --no-cache git";
 
     let mut cmd = proot_command(app, None).ok_or("PRoot environment is not ready")?;
-    cmd.args(["/bin/sh", "-lc", "apk update && apk add --no-cache git"]);
-    cmd.stdout(log);
-    cmd.stderr(log_err);
+    cmd.args(["/bin/sh", "-lc", COMMAND]);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    emit_log(app, format!("$ {COMMAND}"));
+
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("cannot run apk inside the Linux environment: {e}"))?;
+
+    // apk is the slowest part of the install, so its output is streamed into the
+    // log as it arrives instead of appearing all at once when it finishes.
+    let tail = Arc::new(Mutex::new(Vec::<String>::new()));
+    let readers: Vec<_> = [
+        child.stdout.take().map(pipe_to_log(app, &tail)),
+        child.stderr.take().map(pipe_to_log(app, &tail)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
 
     let started = std::time::Instant::now();
     let status = loop {
@@ -510,18 +581,44 @@ fn bootstrap_packages(app: &AppHandle) -> Result<(), String> {
             Err(e) => return Err(format!("cannot wait for apk: {e}")),
         }
     };
+    for reader in readers {
+        let _ = reader.join();
+    }
 
     if status.success() {
         return Ok(());
     }
-    let log_text = fs::read_to_string(&log_path).unwrap_or_default();
-    let lines: Vec<&str> = log_text.lines().collect();
-    let log_tail = lines[lines.len().saturating_sub(3)..].join(" ");
+    let log_tail = tail.lock().unwrap().join(" ");
     Err(if log_tail.trim().is_empty() {
         format!("apk exited with {status}")
     } else {
         log_tail
     })
+}
+
+/// Build a closure that drains one of apk's output streams into the setup log,
+/// keeping the last few lines around so a failure can quote them.
+fn pipe_to_log<R: std::io::Read + Send + 'static>(
+    app: &AppHandle,
+    tail: &Arc<Mutex<Vec<String>>>,
+) -> impl FnOnce(R) -> std::thread::JoinHandle<()> {
+    let app = app.clone();
+    let tail = tail.clone();
+    move |reader| {
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(reader)
+                .lines()
+                .map_while(Result::ok)
+            {
+                emit_log(&app, &line);
+                let mut tail = tail.lock().unwrap();
+                tail.push(line);
+                if tail.len() > 3 {
+                    tail.remove(0);
+                }
+            }
+        })
+    }
 }
 
 #[cfg(unix)]
@@ -610,12 +707,24 @@ pub fn proot_args(rootfs: &Path, cwd: Option<&str>) -> Vec<String> {
 
 const GUEST_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
+/// A directory on the host that PRoot can be started from: the project folder
+/// when it is usable, otherwise `fallback` (the app's own data directory),
+/// otherwise `/`. Whatever comes back must exist, or the spawn fails outright.
+pub fn host_start_dir(fallback: Option<PathBuf>, cwd: Option<&str>) -> PathBuf {
+    cwd.filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+        .or_else(|| fallback.filter(|p| p.is_dir()))
+        .unwrap_or_else(|| PathBuf::from("/"))
+}
+
 /// Build a `std::process::Command` running PRoot; the caller appends the program
 /// to execute inside the rootfs.
 pub fn proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command> {
     let (proot, rootfs) = ready_paths(app)?;
     let mut cmd = Command::new(&proot);
     cmd.args(proot_args(&rootfs, cwd));
+    cmd.current_dir(host_start_dir(env_dir(app).ok(), cwd));
     cmd.env("HOME", "/root");
     cmd.env("TMPDIR", "/tmp");
     cmd.env("PATH", GUEST_PATH);
@@ -647,6 +756,12 @@ pub fn build_proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command
     for arg in proot_args(&rootfs, cwd) {
         cmd.arg(arg);
     }
+
+    // PRoot itself starts on the host, so it needs a working directory that
+    // exists *there*. Without this, portable-pty falls back to $HOME — which we
+    // set to the guest's /root, a path Android has no equivalent of, and the
+    // spawn fails with "No such file or directory" before PRoot ever runs.
+    cmd.cwd(host_start_dir(env_dir(app).ok(), cwd));
 
     cmd.env("TERM", "xterm-256color");
     cmd.env("HOME", "/root");

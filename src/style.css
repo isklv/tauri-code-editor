@@ -730,6 +730,21 @@ body:not(.sidebar-open) .resizer-v {
   font-size: 11px;
 }
 
+.linux-log {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 10px;
+  background: #1b1d23;
+  border-bottom: 1px solid var(--border);
+  color: #b9bec9;
+  font-family: var(--mono-font);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .terminal-host {
   flex: 1;
   min-height: 0;
