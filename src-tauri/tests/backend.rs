@@ -196,6 +196,79 @@ fn linux_env_target_arch_is_valid() {
 }
 
 #[test]
+fn linux_env_counts_as_installed_only_when_the_install_finished() {
+    use tauri_code_editor::linux_env::{env_is_complete, INSTALL_VERSION};
+
+    let dir = temp_dir("linux-env-complete");
+    fs::create_dir_all(dir.join("bin")).unwrap();
+    fs::create_dir_all(dir.join("alpine").join("bin")).unwrap();
+
+    // Files downloaded but the install never reached the end.
+    fs::write(dir.join("bin").join("proot"), "binary").unwrap();
+    fs::write(dir.join("alpine").join("bin").join("sh"), "shell").unwrap();
+    assert!(!env_is_complete(&dir));
+
+    // A marker from an older layout does not count either.
+    fs::write(dir.join(".install-complete"), "0").unwrap();
+    assert!(!env_is_complete(&dir));
+
+    fs::write(
+        dir.join(".install-complete"),
+        format!("{INSTALL_VERSION}\n"),
+    )
+    .unwrap();
+    assert!(env_is_complete(&dir));
+
+    // Alpine ships /bin/sh as a symlink to the absolute path /bin/busybox, which
+    // only resolves inside PRoot. Following it from the host must not make a
+    // perfectly good environment look uninstalled.
+    let shell = dir.join("alpine").join("bin").join("sh");
+    fs::remove_file(&shell).unwrap();
+    std::os::unix::fs::symlink("/no-such-root/bin/busybox", &shell).unwrap();
+    assert!(
+        !shell.exists(),
+        "the symlink target must not resolve on the host"
+    );
+    assert!(env_is_complete(&dir));
+
+    // Losing the PRoot binary makes the environment unusable again.
+    fs::remove_file(dir.join("bin").join("proot")).unwrap();
+    assert!(!env_is_complete(&dir));
+}
+
+#[test]
+fn proot_arguments_root_the_shell_in_the_alpine_filesystem() {
+    use tauri_code_editor::linux_env::proot_args;
+
+    let rootfs = temp_dir("linux-env-args");
+    let cwd = temp_dir("linux-env-project");
+    let args = proot_args(&rootfs, cwd.to_str());
+
+    // Root emulation plus the rootfs are what make apk able to write to /usr.
+    assert!(args.contains(&"-0".to_string()));
+    let root_at = args.iter().position(|a| a == "-r").expect("rootfs flag");
+    assert_eq!(args[root_at + 1], rootfs.to_string_lossy());
+
+    // /dev and /proc must be visible inside, or the shell has no terminal.
+    for mount in ["/dev", "/proc"] {
+        assert!(
+            args.contains(&mount.to_string()),
+            "missing bind for {mount}"
+        );
+    }
+
+    // The project directory is bound under its own path and used as the cwd.
+    let work_at = args.iter().position(|a| a == "-w").expect("workdir flag");
+    assert_eq!(args[work_at + 1], cwd.to_string_lossy());
+    assert!(args.contains(&format!("{0}:{0}", cwd.to_string_lossy())));
+
+    // Without a project directory the shell starts in the rootfs home.
+    let home_args = proot_args(&rootfs, None);
+    let home_at = home_args.iter().position(|a| a == "-w").unwrap();
+    assert_eq!(home_args[home_at + 1], "/root");
+}
+
+#[test]
 fn git_porcelain_parsing_categorizes_correctly() {
     use tauri_code_editor::git::parse_porcelain_status;
     let root = std::path::Path::new("/dummy/repo");

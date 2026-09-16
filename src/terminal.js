@@ -160,23 +160,26 @@ export class TerminalPanel {
     if (!isTauri) {
       this.term.writeln('\x1b[33mTerminal requires the desktop app (npm run tauri:dev).\x1b[0m');
       this.starting = false;
-      return;
+      return false;
     }
     this.fit();
     try {
       this.sessionId = await ptyStart(this.cwd, this.term.cols, this.term.rows, this.shellMode ?? null);
       this.running = true;
+      return true;
     } catch (e) {
       this.writeError(e);
+      return false;
     } finally {
       this.starting = false;
     }
   }
 
+  /** Returns whether a shell is attached, so callers can fall back to another one. */
   async restart(cwd, shellMode) {
     this.term.reset();
     this.running = false;
-    await this.start(cwd, shellMode);
+    return this.start(cwd, shellMode);
   }
 
   async dispose() {

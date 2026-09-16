@@ -450,6 +450,7 @@ pub fn spawn_app_shell(
     cols: u16,
     rows: u16,
 ) -> Result<(PtySession, Box<dyn Read + Send>), String> {
+    let explicit_alpine = matches!(shell_mode, Some("alpine"));
     let use_alpine = match shell_mode {
         Some("alpine") => true,
         Some("native") => false,
@@ -457,17 +458,38 @@ pub fn spawn_app_shell(
     };
 
     if use_alpine {
-        if let Some(cmd) = linux_env::build_proot_command(app, cwd) {
-            match spawn_with_command(cmd, cols, rows) {
+        match linux_env::build_proot_command(app, cwd) {
+            Some(cmd) => match spawn_with_command(cmd, cols, rows) {
                 Ok(res) => return Ok(res),
-                Err(e) => {
-                    eprintln!("PRoot spawn failed: {e}; falling back to native shell");
+                // Asking for Alpine explicitly and silently landing in the native
+                // shell is what makes `apk` look broken, so say what happened.
+                Err(e) if explicit_alpine => {
+                    return Err(format!("Alpine Linux shell could not start: {e}"))
                 }
+                Err(e) => report_alpine_fallback(app, &e),
+            },
+            None if explicit_alpine => {
+                return Err("Alpine Linux environment is not installed yet".to_string())
             }
+            None => report_alpine_fallback(app, "environment files are missing"),
         }
     }
 
     spawn_shell(cwd, cols, rows)
+}
+
+/// Tell the webview that the Alpine shell was requested but the native shell is
+/// what actually started, so the terminal can show it instead of pretending.
+fn report_alpine_fallback(app: &AppHandle, reason: &str) {
+    eprintln!("PRoot spawn failed: {reason}; falling back to native shell");
+    let _ = app.emit(
+        "linux-env://fallback",
+        linux_env::SimpleMessagePayload {
+            message: format!(
+                "Alpine Linux shell unavailable ({reason}); using the native shell instead."
+            ),
+        },
+    );
 }
 
 fn default_shell() -> String {
@@ -733,6 +755,22 @@ pub fn run() {
             github_get_user,
             github_list_repos,
         ])
+        .setup(|app| {
+            // The Alpine environment is what provides apk, git and compilers, so
+            // it is installed on first launch instead of on request. Driving it
+            // from here keeps it working even if the webview never gets there.
+            let handle = app.handle().clone();
+            if !linux_env::is_installed(&handle) {
+                let state = handle
+                    .state::<Arc<linux_env::InstallState>>()
+                    .inner()
+                    .clone();
+                if let Err(e) = linux_env::start_install(handle, state) {
+                    eprintln!("Linux environment setup did not start: {e}");
+                }
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
