@@ -100,29 +100,13 @@ pub fn run_git(app: Option<&AppHandle>, cwd: &Path, args: &[&str]) -> Result<Str
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // Check if Alpine PRoot environment has git installed
+            // Fall back to git inside the Alpine PRoot environment, if installed there.
             if let Some(app) = app {
-                if let (Ok(proot), Ok(rootfs)) = (
-                    crate::linux_env::proot_bin(app),
-                    crate::linux_env::rootfs_dir(app),
-                ) {
-                    let git_in_rootfs = rootfs.join("usr").join("bin").join("git");
-                    if proot.exists() && git_in_rootfs.exists() {
-                        let mut cmd = Command::new(proot);
-                        cmd.args(["-b", "/dev", "-b", "/proc", "-b", "/sys"]);
-                        if Path::new("/storage").exists() {
-                            cmd.args(["-b", "/storage"]);
-                        }
-                        if Path::new("/sdcard").exists() {
-                            cmd.args(["-b", "/sdcard"]);
-                        }
-                        cmd.args(["-r", &rootfs.to_string_lossy(), "-0"]);
-                        cmd.args(["-w", &cwd.to_string_lossy()]);
-                        cmd.env("HOME", "/root");
-                        cmd.env(
-                            "PATH",
-                            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                        );
+                let git_installed = crate::linux_env::rootfs_dir(app)
+                    .map(|r| r.join("usr").join("bin").join("git").exists())
+                    .unwrap_or(false);
+                if git_installed {
+                    if let Some(mut cmd) = crate::linux_env::proot_command(app, cwd.to_str()) {
                         cmd.arg("/usr/bin/git");
                         cmd.args(args);
 
@@ -131,18 +115,17 @@ pub fn run_git(app: Option<&AppHandle>, cwd: &Path, args: &[&str]) -> Result<Str
                             .map_err(|e| format!("Failed executing git inside Linux env: {e}"))?;
                         if proot_out.status.success() {
                             return Ok(String::from_utf8_lossy(&proot_out.stdout).to_string());
-                        } else {
-                            let err_msg = String::from_utf8_lossy(&proot_out.stderr)
-                                .trim()
-                                .to_string();
-                            return Err(if err_msg.is_empty() {
-                                String::from_utf8_lossy(&proot_out.stdout)
-                                    .trim()
-                                    .to_string()
-                            } else {
-                                err_msg
-                            });
                         }
+                        let err_msg = String::from_utf8_lossy(&proot_out.stderr)
+                            .trim()
+                            .to_string();
+                        return Err(if err_msg.is_empty() {
+                            String::from_utf8_lossy(&proot_out.stdout)
+                                .trim()
+                                .to_string()
+                        } else {
+                            err_msg
+                        });
                     }
                 }
             }

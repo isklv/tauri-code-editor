@@ -140,6 +140,7 @@ document.getElementById('app').innerHTML = `
           <select class="panel-select" id="select-shell" style="display:none" title="Choose shell environment">
             <option value="alpine">🐧 Alpine Linux (apk)</option>
             <option value="native">📱 Native Shell</option>
+            <option value="reinstall">🔄 Reinstall Linux</option>
           </select>
           <span class="spacer"></span>
           <button class="icon-button" id="btn-term-keys" title="Toggle on-screen keys">⌨</button>
@@ -862,6 +863,42 @@ $('btn-restart-terminal').addEventListener('click', () => terminal.restart(rootP
 // ── Linux Environment (Alpine + PRoot) ──
 
 let currentShellMode = 'auto';
+let autoInstallTried = false;
+// Only an install the user asked for is allowed to pop the terminal open; the
+// first-launch one finishes in the background without stealing the screen.
+let openTerminalAfterInstall = true;
+
+let installWatch = null;
+
+/** Poll while an install runs — it may have been started by the backend before
+ * the webview attached its event listeners. */
+function watchInstall() {
+  if (installWatch) return;
+  installWatch = setInterval(async () => {
+    const status = await api.getLinuxEnvStatus().catch(() => null);
+    if (!status || status.is_installing) return;
+    clearInterval(installWatch);
+    installWatch = null;
+    await updateLinuxEnvUI();
+    if (status.is_installed) await linuxEnvReady();
+  }, 2000);
+}
+
+/** Switch the terminal over to Alpine once the environment exists. */
+async function linuxEnvReady() {
+  if (currentShellMode === 'native') return;
+  if (openTerminalAfterInstall) {
+    toggleTerminal(false);
+    await startShell('alpine');
+    return;
+  }
+  // A background install must not wipe a shell the user is working in.
+  if ($('panel').classList.contains('hidden')) {
+    await startShell('alpine');
+    return;
+  }
+  setStatus('Alpine Linux ready — restart the terminal (⟳) to get apk.');
+}
 
 async function updateLinuxEnvUI() {
   const btnInstall = $('btn-install-linux');
@@ -882,6 +919,7 @@ async function updateLinuxEnvUI() {
         topbarBadge.className = 'topbar-linux-badge installing';
         if (topbarText) topbarText.textContent = 'Installing…';
       }
+      watchInstall();
     } else if (status.is_installed) {
       btnInstall.style.display = 'none';
       selectShell.style.display = 'inline-block';
@@ -909,7 +947,8 @@ async function updateLinuxEnvUI() {
   }
 }
 
-async function triggerInstallLinux() {
+async function triggerInstallLinux({ openTerminal = true } = {}) {
+  openTerminalAfterInstall = openTerminal;
   const progressBox = $('linux-progress');
   const progressText = $('linux-progress-text');
   const progressBar = $('linux-progress-bar');
@@ -928,6 +967,28 @@ async function triggerInstallLinux() {
   }
 }
 
+/**
+ * The Alpine environment is what makes `apk`, git and compilers available, so it
+ * is set up on first launch instead of waiting for the user to find the button.
+ */
+async function ensureLinuxEnv() {
+  if (autoInstallTried) return;
+  autoInstallTried = true;
+  try {
+    const status = await api.getLinuxEnvStatus();
+    if (status.is_installed) return;
+    if (status.is_installing) {
+      openTerminalAfterInstall = false;
+      watchInstall();
+      return;
+    }
+    setStatus('Setting up Alpine Linux environment (~7 MB)...');
+    await triggerInstallLinux({ openTerminal: false });
+  } catch {
+    // No Tauri backend (browser preview) — nothing to install.
+  }
+}
+
 $('btn-install-linux')?.addEventListener('click', () => triggerInstallLinux());
 $('topbar-linux-badge')?.addEventListener('click', async () => {
   try {
@@ -942,10 +1003,41 @@ $('topbar-linux-badge')?.addEventListener('click', async () => {
   }
 });
 
-$('select-shell')?.addEventListener('change', (e) => {
-  currentShellMode = e.target.value;
-  terminal.restart(rootPath, currentShellMode);
+$('select-shell')?.addEventListener('change', async (e) => {
+  if (e.target.value === 'reinstall') {
+    e.target.value = currentShellMode === 'native' ? 'native' : 'alpine';
+    await reinstallLinuxEnv();
+    return;
+  }
+  await startShell(e.target.value);
 });
+
+/** Start the requested shell, dropping back to the native one if Alpine refuses. */
+async function startShell(mode) {
+  currentShellMode = mode;
+  if (await terminal.restart(rootPath, mode)) return;
+  if (mode !== 'alpine') return;
+  currentShellMode = 'native';
+  const selectShell = $('select-shell');
+  if (selectShell) selectShell.value = 'native';
+  await terminal.restart(rootPath, 'native');
+}
+
+/** Wipe and rebuild the environment — the fix when apk or the shell misbehaves. */
+async function reinstallLinuxEnv() {
+  try {
+    // Detach from the rootfs before deleting it, but keep Alpine as the wanted
+    // shell so the terminal returns to it once the new install lands.
+    currentShellMode = 'auto';
+    await terminal.restart(rootPath, 'native');
+    await api.removeLinuxEnv();
+    await updateLinuxEnvUI();
+    await triggerInstallLinux();
+  } catch (err) {
+    setStatus(`Reinstall failed: ${err}`, true);
+    await updateLinuxEnvUI();
+  }
+}
 
 api.onLinuxEnvProgress((payload) => {
   const progressBox = $('linux-progress');
@@ -960,9 +1052,19 @@ api.onLinuxEnvComplete(async (payload) => {
   const progressBox = $('linux-progress');
   if (progressBox) progressBox.style.display = 'none';
   setStatus(payload.message || 'Alpine Linux environment ready!');
-  currentShellMode = 'alpine';
+  if (installWatch) {
+    clearInterval(installWatch);
+    installWatch = null;
+  }
   await updateLinuxEnvUI();
-  await terminal.restart(rootPath, 'alpine');
+  await linuxEnvReady();
+});
+
+api.onLinuxEnvFallback((payload) => {
+  currentShellMode = 'native';
+  const selectShell = $('select-shell');
+  if (selectShell) selectShell.value = 'native';
+  setStatus(payload.message, true);
 });
 
 api.onLinuxEnvError(async (payload) => {
@@ -1127,6 +1229,7 @@ async function init() {
   }
   await updateLinuxEnvUI();
   await terminal.start(rootPath, currentShellMode);
+  ensureLinuxEnv();
   renderTabs();
   updateStatus();
   clampLayout();
