@@ -85,6 +85,9 @@ document.getElementById('app').innerHTML = `
           <button class="icon-button topbar-btn" id="btn-menu" title="Toggle Sidebar (Ctrl+B)">
             ${SVG_ICONS.menu}
           </button>
+          <span class="topbar-brand" title="Geko - Code on the go" style="display:inline-flex;align-items:center;margin:0 2px;cursor:default;">
+            ${SVG_ICONS.geko}
+          </span>
           <button class="topbar-workspace-btn" id="btn-open" title="Open folder">
             <span class="topbar-ws-icon">${SVG_ICONS.folder}</span>
             <span class="topbar-ws-title" id="topbar-root-name">Open Folder</span>

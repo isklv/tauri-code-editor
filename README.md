@@ -1,7 +1,11 @@
-# Code Editor
+<p align="center">
+  <img src="assets/geko-banner.png" alt="Geko — code on the go" width="280">
+</p>
 
-Редактор кода на **Tauri v2 + Monaco Editor + xterm.js**: дерево файлов, вкладки,
-подсветка синтаксиса и настоящий терминал с PTY.
+# Geko
+
+> **code on the go** — редактор кода на **Tauri v2 + Monaco Editor + xterm.js**: дерево файлов, вкладки,
+подсветка синтаксиса и настоящий терминал с PTY. Поддерживает десктоп и Android.
 
 ## Архитектура
 
@@ -63,8 +67,8 @@ npm run dev           # http://localhost:1420
 
 По тегу `v*` APK дополнительно прикрепляется к обычному релизу.
 
-Артефакт прогона называется `code-editor-apk`, а если секреты подписи не
-настроены — `code-editor-apk-unsigned`.
+Артефакт прогона называется `geko-apk`, а если секреты подписи не
+настроены — `geko-apk-unsigned`.
 
 ### Почему без подписи не установится
 

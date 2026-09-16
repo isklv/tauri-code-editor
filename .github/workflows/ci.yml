@@ -80,6 +80,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: code-editor-deb
+          name: geko-deb
           path: src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error

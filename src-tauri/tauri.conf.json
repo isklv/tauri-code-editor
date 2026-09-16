@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Code Editor",
+  "productName": "Geko",
   "version": "0.1.0",
   "identifier": "dev.codeeditor.ide",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Code Editor",
+        "title": "Geko",
         "width": 1200,
         "height": 800,
         "minWidth": 600,
