@@ -206,6 +206,12 @@ export async function onLinuxEnvError(callback) {
   return listen('linux-env://error', (event) => callback(event.payload));
 }
 
+/** Line-by-line progress of the Linux environment setup. */
+export async function onLinuxEnvLog(callback) {
+  if (!isTauri) return () => {};
+  return listen('linux-env://log', (event) => callback(event.payload));
+}
+
 /** Fired when the Alpine shell was wanted but the native shell started instead. */
 export async function onLinuxEnvFallback(callback) {
   if (!isTauri) return () => {};

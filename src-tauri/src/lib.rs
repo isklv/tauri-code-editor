@@ -460,11 +460,15 @@ pub fn spawn_app_shell(
     if use_alpine {
         match linux_env::build_proot_command(app, cwd) {
             Some(cmd) => match spawn_with_command(cmd, cols, rows) {
-                Ok(res) => return Ok(res),
+                Ok(res) => {
+                    linux_env::emit_log(app, "started the Alpine shell");
+                    return Ok(res);
+                }
                 // Asking for Alpine explicitly and silently landing in the native
                 // shell is what makes `apk` look broken, so say what happened.
                 Err(e) if explicit_alpine => {
-                    return Err(format!("Alpine Linux shell could not start: {e}"))
+                    linux_env::emit_log(app, format!("Alpine shell could not start: {e}"));
+                    return Err(format!("Alpine Linux shell could not start: {e}"));
                 }
                 Err(e) => report_alpine_fallback(app, &e),
             },
@@ -481,7 +485,10 @@ pub fn spawn_app_shell(
 /// Tell the webview that the Alpine shell was requested but the native shell is
 /// what actually started, so the terminal can show it instead of pretending.
 fn report_alpine_fallback(app: &AppHandle, reason: &str) {
-    eprintln!("PRoot spawn failed: {reason}; falling back to native shell");
+    linux_env::emit_log(
+        app,
+        format!("Alpine shell unavailable ({reason}); using the native shell"),
+    );
     let _ = app.emit(
         "linux-env://fallback",
         linux_env::SimpleMessagePayload {

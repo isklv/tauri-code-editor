@@ -9,11 +9,19 @@ import { basename, findFiles } from './api.js';
 
 let host = null;
 
+/** Dismisses the palette that is currently open, if any. */
+let dismissOpen = null;
+
 function ensureHost() {
   if (host) return host;
   host = document.createElement('div');
   host.className = 'modal-backdrop palette-backdrop';
   host.hidden = true;
+  // Bound once: re-binding per open would leave one listener per palette ever
+  // shown, each closing over a palette that is long gone.
+  host.addEventListener('click', (e) => {
+    if (e.target === host) dismissOpen?.();
+  });
   document.body.appendChild(host);
   return host;
 }
@@ -34,6 +42,12 @@ export function openPalette(root) {
   input.className = 'modal-input';
   input.placeholder = 'Go to file…';
   input.spellcheck = false;
+  // Soft keyboards otherwise autocorrect and capitalize file names, and draw
+  // their composing text over what is already in the field.
+  input.autocomplete = 'off';
+  input.autocapitalize = 'off';
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('enterkeyhint', 'go');
   box.appendChild(input);
 
   const list = document.createElement('div');
@@ -96,8 +110,10 @@ export function openPalette(root) {
     backdrop.hidden = true;
     backdrop.textContent = '';
     document.removeEventListener('keydown', onKey, true);
+    if (dismissOpen === cancel) dismissOpen = null;
     resolveChoice(value);
   };
+  const cancel = () => finish(null);
 
   const onKey = (e) => {
     if (e.key === 'Escape') {
@@ -123,9 +139,7 @@ export function openPalette(root) {
 
   document.addEventListener('keydown', onKey, true);
   input.addEventListener('input', search);
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) finish(null);
-  });
+  dismissOpen = cancel;
   input.focus();
   search();
 

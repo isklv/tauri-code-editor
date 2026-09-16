@@ -143,6 +143,7 @@ document.getElementById('app').innerHTML = `
             <option value="reinstall">🔄 Reinstall Linux</option>
           </select>
           <span class="spacer"></span>
+          <button class="icon-button" id="btn-linux-log" title="Show Linux setup log">🧾</button>
           <button class="icon-button" id="btn-term-keys" title="Toggle on-screen keys">⌨</button>
           <button class="icon-button" id="btn-restart-terminal" title="Restart shell">⟳</button>
           <button class="icon-button" id="btn-close-terminal" title="Hide terminal">×</button>
@@ -153,6 +154,7 @@ document.getElementById('app').innerHTML = `
             <div class="linux-progress-bar" id="linux-progress-bar"></div>
           </div>
         </div>
+        <pre class="linux-log" id="linux-log" style="display:none"></pre>
         <div class="terminal-host" id="terminal"></div>
         <div class="term-keys" id="term-keys"></div>
       </section>
@@ -869,6 +871,26 @@ let autoInstallTried = false;
 let openTerminalAfterInstall = true;
 
 let installWatch = null;
+const linuxLogLines = [];
+
+/** Append one setup line to the log box, keeping it scrolled to the newest line. */
+function appendLinuxLog(line) {
+  linuxLogLines.push(line);
+  if (linuxLogLines.length > 300) linuxLogLines.shift();
+  const box = $('linux-log');
+  if (!box) return;
+  box.textContent = linuxLogLines.join('\n');
+  if (box.style.display !== 'none') box.scrollTop = box.scrollHeight;
+}
+
+function showLinuxLog(visible) {
+  const box = $('linux-log');
+  if (!box) return;
+  box.style.display = visible ? 'block' : 'none';
+  if (visible) box.scrollTop = box.scrollHeight;
+  terminal.fit();
+}
+
 
 /** Poll while an install runs — it may have been started by the backend before
  * the webview attached its event listeners. */
@@ -949,6 +971,7 @@ async function updateLinuxEnvUI() {
 
 async function triggerInstallLinux({ openTerminal = true } = {}) {
   openTerminalAfterInstall = openTerminal;
+  showLinuxLog(openTerminal);
   const progressBox = $('linux-progress');
   const progressText = $('linux-progress-text');
   const progressBar = $('linux-progress-bar');
@@ -1039,6 +1062,17 @@ async function reinstallLinuxEnv() {
   }
 }
 
+api.onLinuxEnvLog((payload) => appendLinuxLog(payload.message));
+
+$('btn-linux-log')?.addEventListener('click', () => {
+  const box = $('linux-log');
+  if (!box) return;
+  if (!linuxLogLines.length) appendLinuxLog('No Linux setup activity yet.');
+  const show = box.style.display === 'none';
+  if (show) toggleTerminal(false);
+  showLinuxLog(show);
+});
+
 api.onLinuxEnvProgress((payload) => {
   const progressBox = $('linux-progress');
   const progressText = $('linux-progress-text');
@@ -1051,7 +1085,9 @@ api.onLinuxEnvProgress((payload) => {
 api.onLinuxEnvComplete(async (payload) => {
   const progressBox = $('linux-progress');
   if (progressBox) progressBox.style.display = 'none';
-  setStatus(payload.message || 'Alpine Linux environment ready!');
+  setStatus(payload.message || 'Alpine Linux environment ready!', payload.warning === true);
+  // A clean install needs no explanation; a warned one does, so its log stays up.
+  showLinuxLog(payload.warning === true);
   if (installWatch) {
     clearInterval(installWatch);
     installWatch = null;
@@ -1070,6 +1106,9 @@ api.onLinuxEnvFallback((payload) => {
 api.onLinuxEnvError(async (payload) => {
   const progressBox = $('linux-progress');
   if (progressBox) progressBox.style.display = 'none';
+  appendLinuxLog(`error: ${payload.message}`);
+  toggleTerminal(false);
+  showLinuxLog(true);
   setStatus(`Linux setup error: ${payload.message}`, true);
   await updateLinuxEnvUI();
 });
