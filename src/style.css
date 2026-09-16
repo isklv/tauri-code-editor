@@ -914,13 +914,17 @@ button.statusbar-item:hover {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: #00000099;
+  background: #000000cc;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 12px;
-  z-index: 100;
-  backdrop-filter: blur(2px);
+  /* Above every other floating layer: the context menu (200) and the git
+     overlays (300), so a dialog is never drawn into by something below it. */
+  z-index: 400;
+  /* No backdrop-filter here: Android WebView composites the blurred snapshot of
+     the page over the dialog's own content, which reads as doubled text. */
+  isolation: isolate;
 }
 
 .modal-backdrop[hidden] {
@@ -928,6 +932,7 @@ button.statusbar-item:hover {
 }
 
 .modal {
+  position: relative;
   background: var(--bg-alt);
   border: 1px solid #454545;
   border-radius: 8px;
@@ -1154,7 +1159,13 @@ button.tool.primary:hover {
 }
 
 .palette-name {
+  /* Keeps its full width where it fits, but never pushes the path out of the
+     row: on a phone a long file name would otherwise wrap under it. */
   flex-shrink: 0;
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .palette-dir {
