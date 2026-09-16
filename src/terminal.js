@@ -77,17 +77,28 @@ export class TerminalPanel {
     this.resizeObserver.observe(host);
 
     this.sessionId = null;
+    this.starting = false;
+    this.restartListener = null;
 
     onPtyOutput((bytes) => this.term.write(bytes));
     onPtyExit((exitId) => {
-      // Ignore stale exit event from previous session killed during restart
+      // Ignore exit event if a new session is currently starting or belongs to an old session
+      if (this.starting) {
+        return;
+      }
       if (exitId && this.sessionId && exitId !== this.sessionId) {
         return;
       }
       this.running = false;
       this.term.writeln('\r\n\x1b[90m[shell exited — press Enter to restart]\x1b[0m');
-      const once = this.term.onData(() => {
-        once.dispose();
+      if (this.restartListener) {
+        this.restartListener.dispose();
+      }
+      this.restartListener = this.term.onData(() => {
+        if (this.restartListener) {
+          this.restartListener.dispose();
+          this.restartListener = null;
+        }
         this.start(this.cwd);
       });
     });
@@ -139,10 +150,16 @@ export class TerminalPanel {
 
   /** Spawn (or respawn) the shell. Safe to call repeatedly. */
   async start(cwd, shellMode) {
+    if (this.restartListener) {
+      this.restartListener.dispose();
+      this.restartListener = null;
+    }
+    this.starting = true;
     this.cwd = cwd ?? this.cwd;
     if (shellMode !== undefined) this.shellMode = shellMode;
     if (!isTauri) {
       this.term.writeln('\x1b[33mTerminal requires the desktop app (npm run tauri:dev).\x1b[0m');
+      this.starting = false;
       return;
     }
     this.fit();
@@ -151,6 +168,8 @@ export class TerminalPanel {
       this.running = true;
     } catch (e) {
       this.writeError(e);
+    } finally {
+      this.starting = false;
     }
   }
 

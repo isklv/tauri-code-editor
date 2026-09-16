@@ -216,6 +216,17 @@ export function basename(path) {
   return idx === -1 ? clean : clean.slice(idx + 1);
 }
 
+export function folderDisplayName(path) {
+  if (!path) return 'Workspace';
+  const clean = path.replace(/[\\/]+$/, '');
+  if (clean === '/storage/emulated/0' || clean === '/sdcard') {
+    return 'Internal Storage';
+  }
+  const base = basename(clean);
+  if (!base || base === '/' || base === '\\') return 'Root';
+  return base;
+}
+
 export function dirname(path) {
   const clean = path.replace(/[\\/]+$/, '');
   const idx = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));

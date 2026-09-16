@@ -508,7 +508,7 @@ body:not(.sidebar-open) .resizer-v {
   }
 
   .topbar-linux-badge {
-    display: none;
+    display: none !important;
   }
 
   .quick-open-pill {
@@ -812,6 +812,10 @@ body:not(.sidebar-open) .resizer-v {
     text-align: center;
     border-radius: 7px;
     padding: 0 3px;
+  }
+
+  .statusbar {
+    display: none !important;
   }
 
   #status-encoding,
@@ -1205,6 +1209,17 @@ button.tool.primary:hover {
   justify-content: center;
   width: 18px;
   margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.tree-icon-svg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-icon-svg svg {
+  display: block;
   flex-shrink: 0;
 }
 

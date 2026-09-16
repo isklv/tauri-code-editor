@@ -523,7 +523,7 @@ function updateBreadcrumbs() {
     return;
   }
   container.style.display = 'flex';
-  const rootName = rootPath ? api.basename(rootPath) : 'Workspace';
+  const rootName = rootPath ? api.folderDisplayName(rootPath) : 'Workspace';
   const rel = rootPath && activePath.startsWith(rootPath)
     ? activePath.slice(rootPath.length).replace(/^[\\/]+/, '')
     : activePath;
@@ -686,7 +686,7 @@ async function openFolder(path) {
     return false;
   }
   rootPath = path;
-  const name = api.basename(path) || path;
+  const name = api.folderDisplayName(path);
   $('root-name').textContent = name;
   if ($('topbar-root-name')) $('topbar-root-name').textContent = name;
   if ($('quick-open-label')) $('quick-open-label').textContent = `${name} — Go to file...`;

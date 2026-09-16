@@ -368,6 +368,7 @@ impl PtySession {
 struct Terminal {
     session: Mutex<Option<PtySession>>,
     session_id: std::sync::atomic::AtomicU64,
+    active_id: std::sync::atomic::AtomicU64,
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -434,9 +435,10 @@ pub fn spawn_shell(
     // An Android app process usually starts without PATH, which leaves the
     // shell unable to find even the toybox applets.
     #[cfg(target_os = "android")]
-    if std::env::var_os("PATH").is_none() {
-        cmd.env("PATH", "/system/bin:/system/xbin:/vendor/bin");
-    }
+    cmd.env(
+        "PATH",
+        "/system/bin:/system/xbin:/vendor/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin",
+    );
 
     spawn_with_command(cmd, cols, rows)
 }
@@ -492,17 +494,21 @@ fn pty_start(
     rows: u16,
     shell_mode: Option<String>,
 ) -> Result<u64, String> {
-    // Generate a fresh session ID before killing old session so late exit events from the previous shell are ignored
+    // Generate a fresh session ID before killing old session
     let id = terminal
         .session_id
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
         + 1;
+    terminal
+        .active_id
+        .store(id, std::sync::atomic::Ordering::SeqCst);
     kill_session(&terminal);
 
     let (session, mut reader) =
         spawn_app_shell(&app, shell_mode.as_deref(), cwd.as_deref(), cols, rows)?;
 
     let emitter = app.clone();
+    let term_state = terminal.inner().clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         loop {
@@ -515,7 +521,14 @@ fn pty_start(
                 }
             }
         }
-        let _ = emitter.emit("pty://exit", id);
+        // Only emit exit if this session is STILL the active session (not replaced by a newer session and not killed)
+        if term_state
+            .active_id
+            .load(std::sync::atomic::Ordering::SeqCst)
+            == id
+        {
+            let _ = emitter.emit("pty://exit", id);
+        }
     });
 
     *terminal.session.lock().unwrap() = Some(session);
@@ -548,6 +561,9 @@ fn kill_session(terminal: &Terminal) {
 
 #[tauri::command]
 fn pty_kill(terminal: State<'_, Arc<Terminal>>) -> Result<(), String> {
+    terminal
+        .active_id
+        .store(0, std::sync::atomic::Ordering::SeqCst);
     kill_session(&terminal);
     Ok(())
 }

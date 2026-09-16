@@ -73,9 +73,9 @@ const EXACT_ICONS = {
 export function getFileIconHtml(name, isDir = false, isExpanded = false) {
   if (isDir) {
     if (isExpanded) {
-      return `<span class="codicon-folder-open" style="color: #dcb67a;">📂</span>`;
+      return `<span class="tree-icon-svg" style="display:inline-flex;align-items:center;">${SVG_ICONS.folderOpen}</span>`;
     }
-    return `<span class="codicon-folder" style="color: #dcb67a;">📁</span>`;
+    return `<span class="tree-icon-svg" style="display:inline-flex;align-items:center;">${SVG_ICONS.folder}</span>`;
   }
 
   const lower = name.toLowerCase();
@@ -90,7 +90,7 @@ export function getFileIconHtml(name, isDir = false, isExpanded = false) {
     return `<span class="file-icon-badge" style="background:${item.color}22; color:${item.color}; border:1px solid ${item.color}66">${item.badge}</span>`;
   }
 
-  return `<span class="file-icon-generic" style="color:#858585;">📄</span>`;
+  return `<span class="tree-icon-svg" style="display:inline-flex;align-items:center;">${SVG_ICONS.file}</span>`;
 }
 
 export const SVG_ICONS = {
@@ -109,7 +109,9 @@ export const SVG_ICONS = {
   refresh: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>`,
   close: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
   save: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
-  folder: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`,
+  folder: `<svg width="17" height="17" viewBox="0 0 24 24" fill="#dcb67a"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`,
+  folderOpen: `<svg width="17" height="17" viewBox="0 0 24 24" fill="#e5be7a"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/></svg>`,
+  file: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#858585" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
   menu: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`,
   chevronDown: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
 };
