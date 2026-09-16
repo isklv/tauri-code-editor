@@ -7,7 +7,7 @@ use std::{env, fs};
 use tauri_code_editor::{read_dir_listing, read_text_file, spawn_shell, write_text_file};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    let dir = env::temp_dir().join(format!("tauri-code-editor-test-{name}"));
+    let dir = env::temp_dir().join(format!("geko-test-{name}"));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir

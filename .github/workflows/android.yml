@@ -160,7 +160,7 @@ jobs:
         with:
           # The name says which one you are downloading, so an unsigned build
           # from a secretless run cannot be mistaken for a releasable APK.
-          name: code-editor-apk${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}
+          name: geko-apk${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}
           path: ${{ env.APK_PATH }}
           if-no-files-found: error
 
