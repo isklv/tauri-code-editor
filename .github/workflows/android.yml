@@ -171,6 +171,8 @@ jobs:
             exit 1
           fi
 
+          echo "Original APK: $apk"
+
           case "$apk" in
             *arm64-v8a*) abi="-arm64" ;;
             *armeabi-v7a*) abi="-armv7" ;;
@@ -180,17 +182,23 @@ jobs:
             *) abi="" ;;
           esac
 
-          suffix="${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}"
+          if [[ "$apk" == *"-unsigned.apk" ]]; then
+            suffix="-unsigned"
+          else
+            suffix=""
+          fi
+
           versioned_apk="$(dirname "$apk")/geko-v${{ steps.versioning.outputs.version_name }}${abi}${suffix}.apk"
           cp "$apk" "$versioned_apk"
 
+          echo "RAW_APK_PATH=$apk" >> "$GITHUB_ENV"
           echo "APK_PATH=$versioned_apk" >> "$GITHUB_ENV"
           ls -lh "$versioned_apk"
 
       - name: Verify the signature
         if: steps.signing.outputs.signed == 'true'
         run: |
-          case "$APK_PATH" in
+          case "$RAW_APK_PATH" in
             *-unsigned.apk)
               echo "::error::Signing secrets are set but Gradle produced an unsigned APK — check that the secrets decode to a valid keystore."
               exit 1
@@ -206,7 +214,7 @@ jobs:
         with:
           # The name says which one you are downloading, so an unsigned build
           # from a secretless run cannot be mistaken for a releasable APK.
-          name: geko-apk-v${{ steps.versioning.outputs.version_name }}${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}
+          name: geko-apk-v${{ steps.versioning.outputs.version_name }}${{ steps.signing.outputs.signed == 'false' && '-unsigned' || '' }}
           path: ${{ env.APK_PATH }}
           if-no-files-found: error
 
