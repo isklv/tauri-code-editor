@@ -30,6 +30,7 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "dev.codeeditor.ide"
         minSdk = 24
+        targetSdk = 28
         val envVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
             ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
         val envVersionName = System.getenv("VERSION_NAME")
