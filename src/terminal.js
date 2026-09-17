@@ -30,7 +30,6 @@ const THEME = {
   brightWhite: '#ffffff',
 };
 
-const IS_ANDROID = /Android/.test(navigator.userAgent);
 
 const HELPER_KEYS = [
   ['Esc', '\x1b'],
@@ -70,7 +69,12 @@ export class TerminalPanel {
     this.term.loadAddon(this.fitAddon);
     this.term.loadAddon(new WebLinksAddon());
     this.term.open(host);
-    if (IS_ANDROID) this.streamComposedInput();
+    if (this.term.textarea) {
+      this.term.textarea.setAttribute('autocomplete', 'off');
+      this.term.textarea.setAttribute('autocorrect', 'off');
+      this.term.textarea.setAttribute('autocapitalize', 'none');
+      this.term.textarea.setAttribute('spellcheck', 'false');
+    }
 
     this.term.onData((data) => this.send(data));
 
@@ -105,59 +109,6 @@ export class TerminalPanel {
         this.start(this.cwd);
       });
     });
-  }
-
-  /**
-   * Send soft-keyboard composition to the shell as it is typed.
-   *
-   * Android keyboards compose a whole word before committing it, and xterm
-   * withholds composed text until `compositionend`: the block cursor stays
-   * parked at the start of the word while the letters pile up in an overlay,
-   * and an interactive prompt sees nothing until you type a space. Take the
-   * composition events away from xterm -- a capturing listener on the container
-   * runs before xterm's own listeners, which sit on the textarea -- and forward
-   * each keystroke instead.
-   */
-  streamComposedInput() {
-    const textarea = this.term.textarea;
-    if (!textarea) return;
-    // xterm sets autocorrect/autocapitalize/spellcheck but not this one, which
-    // is the other half of asking the keyboard for a plain, suggestion-free field.
-    textarea.setAttribute('autocomplete', 'off');
-
-    // What the shell has already received from the composition in progress. The
-    // event's own `data` carries the whole word each time, so diffing against
-    // this is what turns it back into keystrokes.
-    let composed = '';
-
-    const apply = (next) => {
-      let shared = 0;
-      while (shared < composed.length && shared < next.length && composed[shared] === next[shared]) {
-        shared++;
-      }
-      // A suggestion can rewrite the middle of the word: rub out the tail the
-      // shell already has before sending the replacement.
-      if (composed.length > shared) this.send('\x7f'.repeat(composed.length - shared));
-      if (next.length > shared) this.send(next.slice(shared));
-      composed = next;
-    };
-
-    const onComposition = (e) => {
-      e.stopPropagation(); // xterm's CompositionHelper never gets to run
-      if (e.type === 'compositionstart') {
-        composed = '';
-        return;
-      }
-      apply(e.data ?? '');
-      if (e.type === 'compositionend') {
-        textarea.value = '';
-        composed = '';
-      }
-    };
-
-    for (const type of ['compositionstart', 'compositionupdate', 'compositionend']) {
-      this.host.addEventListener(type, onComposition, true);
-    }
   }
 
   /** Send input to the shell, applying a pending Ctrl from the helper bar. */

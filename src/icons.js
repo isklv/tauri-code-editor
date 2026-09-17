@@ -78,7 +78,7 @@ export function getFileIconHtml(name, isDir = false, isExpanded = false) {
     return `<span class="tree-icon-svg" style="display:inline-flex;align-items:center;">${SVG_ICONS.folder}</span>`;
   }
 
-  const lower = name.toLowerCase();
+  const lower = (name || '').toLowerCase();
   if (EXACT_ICONS[lower]) {
     const item = EXACT_ICONS[lower];
     return `<span class="file-icon-badge" style="background:${item.color}22; color:${item.color}; border:1px solid ${item.color}66">${item.badge}</span>`;

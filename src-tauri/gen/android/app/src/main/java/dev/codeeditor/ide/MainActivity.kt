@@ -1,6 +1,8 @@
 package dev.codeeditor.ide
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,7 +14,25 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    requestStoragePermissions()
     requestAllFilesAccessOnce()
+  }
+
+  private fun requestStoragePermissions() {
+    val permissions = mutableListOf<String>()
+    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+      if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+      }
+    }
+    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+      if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+        permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+      }
+    }
+    if (permissions.isNotEmpty()) {
+      requestPermissions(permissions.toTypedArray(), 1001)
+    }
   }
 
   /**
