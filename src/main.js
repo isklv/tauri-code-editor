@@ -4,7 +4,7 @@ import * as api from './api.js';
 import { askConfirm, askFolder, askText, showInfo } from './dialog.js';
 import { showMenu } from './contextmenu.js';
 import { openPalette } from './palette.js';
-import { createDiffEditor, createEditor, createModel, monaco, setupCompletions } from './editor.js';
+import { createDiffEditor, createEditor, createModel, fixAndroidComposition, monaco, setupCompletions } from './editor.js';
 import { FileTree } from './filetree.js';
 import { TerminalPanel } from './terminal.js';
 import { GitPanel } from './gitpanel.js';
@@ -221,6 +221,9 @@ let currentView = 'explorer';
 
 const editor = createEditor($('editor'));
 const diffEditor = createDiffEditor($('diff-host'));
+for (const target of [editor, diffEditor.getOriginalEditor(), diffEditor.getModifiedEditor()]) {
+  fixAndroidComposition(target);
+}
 let diffOriginalModel = null;
 let diffModifiedModel = null;
 
@@ -864,7 +867,10 @@ function toggleTerminal(force) {
 
 $('btn-toggle-terminal').addEventListener('click', () => toggleTerminal());
 $('btn-close-terminal').addEventListener('click', () => toggleTerminal(true));
-$('btn-restart-terminal').addEventListener('click', () => terminal.restart(rootPath, currentShellMode));
+$('btn-restart-terminal').addEventListener('click', async () => {
+  const mode = currentShellMode === 'native' ? 'native' : 'alpine';
+  await startShell(mode);
+});
 
 // ── Linux Environment (Alpine + PRoot) ──
 
@@ -913,17 +919,13 @@ function watchInstall() {
 /** Switch the terminal over to Alpine once the environment exists. */
 async function linuxEnvReady() {
   if (currentShellMode === 'native') return;
+  currentShellMode = 'alpine';
+  const selectShell = $('select-shell');
+  if (selectShell) selectShell.value = 'alpine';
   if (openTerminalAfterInstall) {
     toggleTerminal(false);
-    await startShell('alpine');
-    return;
   }
-  // A background install must not wipe a shell the user is working in.
-  if ($('panel').classList.contains('hidden')) {
-    await startShell('alpine');
-    return;
-  }
-  setStatus('Alpine Linux ready — restart the terminal (⟳) to get apk.');
+  await startShell('alpine');
 }
 
 async function updateLinuxEnvUI() {
@@ -1042,10 +1044,13 @@ $('select-shell')?.addEventListener('change', async (e) => {
 /** Start the requested shell, dropping back to the native one if Alpine refuses. */
 async function startShell(mode) {
   currentShellMode = mode;
-  if (await terminal.restart(rootPath, mode)) return;
+  const selectShell = $('select-shell');
+  if (await terminal.restart(rootPath, mode)) {
+    if (selectShell) selectShell.value = mode;
+    return;
+  }
   if (mode !== 'alpine') return;
   currentShellMode = 'native';
-  const selectShell = $('select-shell');
   if (selectShell) selectShell.value = 'native';
   await terminal.restart(rootPath, 'native');
 }

@@ -18,11 +18,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// Bumped whenever the layout produced by `run_install` changes; an environment
 /// installed by an older version is re-created instead of being trusted.
-pub const INSTALL_VERSION: &str = "3";
+pub const INSTALL_VERSION: &str = "4";
 const MARKER_FILE: &str = ".install-complete";
 
-const ALPINE_BRANCH: &str = "v3.24";
-const ALPINE_RELEASE: &str = "3.24.1";
+const ALPINE_BRANCH: &str = "v3.22";
+const ALPINE_RELEASE: &str = "3.22.5";
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LinuxEnvStatus {
@@ -474,11 +474,21 @@ fn configure_rootfs(rootfs_path: &Path) -> Result<(), String> {
         .map_err(|e| format!("cannot create {}: {e}", etc_dir.display()))?;
 
     // DNS: PRoot exposes no host resolver, so the rootfs needs its own.
-    fs::write(
-        etc_dir.join("resolv.conf"),
-        "nameserver 1.1.1.1\nnameserver 8.8.8.8\n",
-    )
-    .map_err(|e| format!("cannot write resolv.conf: {e}"))?;
+    let mut resolv_conf = String::new();
+    #[cfg(target_os = "android")]
+    {
+        for prop in ["net.dns1", "net.dns2", "net.dns3", "net.dns4"] {
+            if let Ok(out) = Command::new("getprop").arg(prop).output() {
+                let ip = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !ip.is_empty() && (ip.contains('.') || ip.contains(':')) {
+                    resolv_conf.push_str(&format!("nameserver {ip}\n"));
+                }
+            }
+        }
+    }
+    resolv_conf.push_str("nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1\nnameserver 8.8.4.4\n");
+    fs::write(etc_dir.join("resolv.conf"), resolv_conf)
+        .map_err(|e| format!("cannot write resolv.conf: {e}"))?;
     let _ = fs::write(
         etc_dir.join("hosts"),
         "127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n",
@@ -685,10 +695,14 @@ pub fn proot_args(rootfs: &Path, cwd: Option<&str>) -> Vec<String> {
 
     // Virtual kernel filesystems (skip /sys on Android, SELinux blocks it).
     bind("/dev", None);
+    bind("/dev/urandom", Some("/dev/random"));
     bind("/proc", None);
     #[cfg(not(target_os = "android"))]
     bind("/sys", None);
     bind("/proc/self/fd", Some("/dev/fd"));
+    bind("/proc/self/fd/0", Some("/dev/stdin"));
+    bind("/proc/self/fd/1", Some("/dev/stdout"));
+    bind("/proc/self/fd/2", Some("/dev/stderr"));
 
     // Host storage, so project files are reachable from inside the environment.
     for dir in ["/storage", "/sdcard", "/data", "/home", "/tmp"] {

@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <rect width="1024" height="1024" rx="229.990" fill="#081938"/>
-  <g transform="translate(175.757,163.840) scale(0.934658)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 719.5 745.0" width="719.5" height="745.0">
   <!-- Geko mark, trimmed to its tight bounding box so it can be placed
        inside any icon shape with a known amount of padding. -->
   <g transform="translate(-152.25,-143) scale(1.137778, 1.135255)">
@@ -442,5 +440,4 @@ fill="#71ec14" stroke="none">
 147 -3 188 -14 200 -17 16 -26 18 -26 4z"/>
 </g>
   </g>
-</g>
 </svg>

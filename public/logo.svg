@@ -1,7 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <rect width="1024" height="1024" rx="230" fill="#081938"/>
-  <g transform="scale(1.137778, 1.135255)">
-    <g transform="translate(0.000000,902.000000) scale(0.100000,-0.100000)"
+  <rect width="1024" height="1024" rx="229.990" fill="#081938"/>
+  <g transform="translate(175.757,163.840) scale(0.934658)">
+  <!-- Geko mark, trimmed to its tight bounding box so it can be placed
+       inside any icon shape with a known amount of padding. -->
+  <g transform="translate(-152.25,-143) scale(1.137778, 1.135255)">
+<g transform="translate(0.000000,902.000000) scale(0.100000,-0.100000)"
 fill="#71ec14" stroke="none">
 <path d="M3940 7750 c0 -5 -7 -10 -15 -10 -9 0 -27 -11 -40 -25 -21 -20 -25
 -34 -25 -80 0 -30 5 -55 10 -55 6 0 10 -9 10 -19 0 -11 6 -22 13 -25 10 -5 10
@@ -439,4 +442,5 @@ fill="#71ec14" stroke="none">
 147 -3 188 -14 200 -17 16 -26 18 -26 4z"/>
 </g>
   </g>
+</g>
 </svg>

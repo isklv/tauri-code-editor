@@ -110,6 +110,39 @@ export function createEditor(container) {
   });
 }
 
+/**
+ * Android soft keyboards compose as you type, and Monaco reads the `<textarea>`
+ * from inside `compositionupdate` -- an event Chromium fires *before* the
+ * composed text lands in the field. The editor therefore always sees the state
+ * from the previous keystroke: the first character of a word stays invisible
+ * until the second one pushes it through, and the caret trails the text by one
+ * character. `input` fires once the value is there, but Monaco ignores it while
+ * a composition is running, so re-emit the composition event from `input` to
+ * make Monaco re-read the field at a point where it holds the real value.
+ */
+export function fixAndroidComposition(target) {
+  if (!/Android/.test(navigator.userAgent)) return;
+
+  const textarea = target.getDomNode()?.querySelector('textarea.inputarea');
+  if (!textarea) return;
+
+  let composing = false;
+  // Monaco registered its own listeners when the editor was created, so these
+  // run after its handlers have already seen (and mishandled) the event.
+  textarea.addEventListener('compositionstart', () => {
+    composing = true;
+  });
+  textarea.addEventListener('compositionend', () => {
+    composing = false;
+  });
+  textarea.addEventListener('input', () => {
+    if (!composing) return;
+    textarea.dispatchEvent(
+      new CompositionEvent('compositionupdate', { data: textarea.value, bubbles: true }),
+    );
+  });
+}
+
 export function createModel(content, path) {
   return monaco.editor.createModel(content, languageFor(path));
 }
