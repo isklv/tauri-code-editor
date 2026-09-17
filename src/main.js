@@ -4,7 +4,7 @@ import * as api from './api.js';
 import { askConfirm, askFolder, askText, showInfo } from './dialog.js';
 import { showMenu } from './contextmenu.js';
 import { openPalette } from './palette.js';
-import { createDiffEditor, createEditor, createModel, monaco, setupCompletions } from './editor.js';
+import { createDiffEditor, createEditor, createModel, fixAndroidComposition, monaco, setupCompletions } from './editor.js';
 import { FileTree } from './filetree.js';
 import { TerminalPanel } from './terminal.js';
 import { GitPanel } from './gitpanel.js';
@@ -221,6 +221,9 @@ let currentView = 'explorer';
 
 const editor = createEditor($('editor'));
 const diffEditor = createDiffEditor($('diff-host'));
+for (const target of [editor, diffEditor.getOriginalEditor(), diffEditor.getModifiedEditor()]) {
+  fixAndroidComposition(target);
+}
 let diffOriginalModel = null;
 let diffModifiedModel = null;
 
