@@ -57,6 +57,14 @@ pub struct Root {
 /// own data directory is the fallback that always works.
 fn root_candidates(app: &AppHandle) -> Vec<Root> {
     let p = app.path();
+    #[cfg(target_os = "android")]
+    let mut roots = vec![
+        ("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))),
+        ("Downloads", Ok(PathBuf::from("/storage/emulated/0/Download"))),
+        ("Documents", Ok(PathBuf::from("/storage/emulated/0/Documents"))),
+        ("App storage", p.app_data_dir()),
+    ];
+    #[cfg(not(target_os = "android"))]
     let mut roots = vec![
         ("Home", p.home_dir()),
         ("Documents", p.document_dir()),
@@ -112,17 +120,27 @@ fn list_dir(app: AppHandle, path: Option<String>) -> Result<DirListing, String> 
 }
 
 /// List one directory: sub-directories first, then files, each case-insensitively
-/// by name. Entries that cannot be stat'ed are skipped rather than failing the call.
+/// by name. Entries that cannot be stat'ed fall back to file_type/symlink_metadata
+/// rather than silently dropping files.
 pub fn read_dir_listing(dir: &Path) -> Result<DirListing, String> {
     let mut entries = Vec::new();
     for entry in fs::read_dir(dir).map_err(err("cannot read directory"))? {
         let Ok(entry) = entry else { continue };
-        let Ok(meta) = entry.metadata() else { continue };
+        let (is_dir, size) = match entry.metadata() {
+            Ok(meta) => (meta.is_dir(), meta.len()),
+            Err(_) => match fs::symlink_metadata(entry.path()) {
+                Ok(meta) => (meta.is_dir(), meta.len()),
+                Err(_) => {
+                    let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                    (is_dir, 0)
+                }
+            },
+        };
         entries.push(DirEntryInfo {
             name: entry.file_name().to_string_lossy().into_owned(),
             path: entry.path().to_string_lossy().into_owned(),
-            is_dir: meta.is_dir(),
-            size: meta.len(),
+            is_dir,
+            size,
         });
     }
 
