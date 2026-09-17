@@ -18,11 +18,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// Bumped whenever the layout produced by `run_install` changes; an environment
 /// installed by an older version is re-created instead of being trusted.
-pub const INSTALL_VERSION: &str = "2";
+pub const INSTALL_VERSION: &str = "3";
 const MARKER_FILE: &str = ".install-complete";
 
-const ALPINE_BRANCH: &str = "v3.20";
-const ALPINE_RELEASE: &str = "3.20.3";
+const ALPINE_BRANCH: &str = "v3.24";
+const ALPINE_RELEASE: &str = "3.24.1";
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LinuxEnvStatus {
@@ -492,7 +492,9 @@ fn configure_rootfs(rootfs_path: &Path) -> Result<(), String> {
         apk_dir.join("repositories"),
         format!(
             "https://dl-cdn.alpinelinux.org/alpine/{ALPINE_BRANCH}/main\n\
-             https://dl-cdn.alpinelinux.org/alpine/{ALPINE_BRANCH}/community\n"
+             https://dl-cdn.alpinelinux.org/alpine/{ALPINE_BRANCH}/community\n\
+             # https://dl-cdn.alpinelinux.org/alpine/edge/main\n\
+             # https://dl-cdn.alpinelinux.org/alpine/edge/community\n"
         ),
     )
     .map_err(|e| format!("cannot write apk repositories: {e}"))?;
@@ -658,17 +660,18 @@ pub fn remove_env(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Arguments shared by every PRoot invocation (terminal, git, package bootstrap):
-/// root emulation, the rootfs, the kernel filesystems and the working directory.
 pub fn proot_args(rootfs: &Path, cwd: Option<&str>) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
-
-    #[cfg(target_os = "android")]
-    args.push("--link2symlink".to_string());
-
-    args.push("--kill-on-exit".to_string());
-    args.push("-0".to_string());
-    args.push("-r".to_string());
-    args.push(rootfs.to_string_lossy().into_owned());
+    let mut args = if cfg!(target_os = "android") {
+        vec!["--link2symlink".to_string()]
+    } else {
+        Vec::new()
+    };
+    args.extend([
+        "--kill-on-exit".to_string(),
+        "-0".to_string(),
+        "-r".to_string(),
+        rootfs.to_string_lossy().into_owned(),
+    ]);
 
     let mut bind = |host: &str, guest: Option<&str>| {
         if Path::new(host).exists() {

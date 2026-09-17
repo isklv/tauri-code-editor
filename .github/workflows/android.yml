@@ -99,6 +99,34 @@ jobs:
 
       - run: npm ci
 
+      - name: Configure build versioning
+        id: versioning
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          RUN_NUM="${GITHUB_RUN_NUMBER}"
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            VERSION_NAME="${BASE_VERSION}+b${RUN_NUM}.${SHORT_SHA}"
+          else
+            VERSION_NAME="${BASE_VERSION}-dev.${RUN_NUM}+${SHORT_SHA}"
+          fi
+
+          VERSION_CODE=$((1000 + RUN_NUM))
+
+          echo "version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_HASH=$SHORT_SHA" >> "$GITHUB_ENV"
+
+          echo "Configured Geko version: $VERSION_NAME (versionCode: $VERSION_CODE)"
+
       - name: Configure release signing
         id: signing
         env:
@@ -124,9 +152,13 @@ jobs:
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Build APK
+        env:
+          VERSION_NAME: ${{ steps.versioning.outputs.version_name }}
+          VERSION_CODE: ${{ steps.versioning.outputs.version_code }}
+          GIT_COMMIT_HASH: ${{ steps.versioning.outputs.short_sha }}
         run: npx tauri android build --apk ${{ steps.targets.outputs.tauri }}
 
-      - name: Locate the APK
+      - name: Locate and version the APK
         run: |
           outputs=src-tauri/gen/android/app/build/outputs/apk
           # An unsigned release build is named `...-release-unsigned.apk`, so
@@ -138,8 +170,22 @@ jobs:
             find "$outputs" -type f -printf '%P\n' 2>/dev/null || true
             exit 1
           fi
-          echo "APK_PATH=$apk" >> "$GITHUB_ENV"
-          ls -lh "$apk"
+
+          case "$apk" in
+            *arm64-v8a*) abi="-arm64" ;;
+            *armeabi-v7a*) abi="-armv7" ;;
+            *x86_64*) abi="-x86_64" ;;
+            *x86*) abi="-x86" ;;
+            *universal*) abi="-universal" ;;
+            *) abi="" ;;
+          esac
+
+          suffix="${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}"
+          versioned_apk="$(dirname "$apk")/geko-v${{ steps.versioning.outputs.version_name }}${abi}${suffix}.apk"
+          cp "$apk" "$versioned_apk"
+
+          echo "APK_PATH=$versioned_apk" >> "$GITHUB_ENV"
+          ls -lh "$versioned_apk"
 
       - name: Verify the signature
         if: steps.signing.outputs.signed == 'true'
@@ -160,7 +206,7 @@ jobs:
         with:
           # The name says which one you are downloading, so an unsigned build
           # from a secretless run cannot be mistaken for a releasable APK.
-          name: geko-apk${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}
+          name: geko-apk-v${{ steps.versioning.outputs.version_name }}${{ steps.signing.outputs.signed == 'true' && '' || '-unsigned' }}
           path: ${{ env.APK_PATH }}
           if-no-files-found: error
 
@@ -177,8 +223,8 @@ jobs:
           gh release create latest "$APK_PATH" \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "Latest build" \
-            --notes "Automatic build of ${GITHUB_SHA:0:7}. Install with \`adb install -r\` or open this page on the phone and tap the APK."
+            --title "Latest build (v${{ steps.versioning.outputs.version_name }})" \
+            --notes "Automatic build of ${GITHUB_SHA:0:7} (version \`${{ steps.versioning.outputs.version_name }}\`, versionCode \`${{ steps.versioning.outputs.version_code }}\`). Install with \`adb install -r\` or open this page on the phone and tap the APK."
 
       - name: Attach the APK to the tagged release
         if: github.ref_type == 'tag' && steps.signing.outputs.signed == 'true'
@@ -195,6 +241,12 @@ jobs:
         if: always()
         run: |
           {
+            echo "## Build Info"
+            echo
+            echo "- **Version Name:** \`${{ steps.versioning.outputs.version_name }}\`"
+            echo "- **Version Code:** \`${{ steps.versioning.outputs.version_code }}\`"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+            echo
             echo "## APK"
             echo
             if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then

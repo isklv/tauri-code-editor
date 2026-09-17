@@ -1,7 +1,7 @@
 import './style.css';
 
 import * as api from './api.js';
-import { askConfirm, askFolder, askText } from './dialog.js';
+import { askConfirm, askFolder, askText, showInfo } from './dialog.js';
 import { showMenu } from './contextmenu.js';
 import { openPalette } from './palette.js';
 import { createDiffEditor, createEditor, createModel, monaco, setupCompletions } from './editor.js';
@@ -204,6 +204,7 @@ document.getElementById('app').innerHTML = `
     <span class="statusbar-item" id="status-encoding">UTF-8</span>
     <span class="statusbar-item" id="status-indent">Spaces: 2</span>
     <span class="statusbar-item" id="status-language"></span>
+    <button class="statusbar-item" id="status-version" style="background:none;border:none;color:inherit;cursor:pointer;" title="Click for build info"></button>
   </footer>
 `;
 
@@ -1260,7 +1261,49 @@ function clampLayout() {
 
 window.addEventListener('resize', clampLayout);
 
-// ── Boot ──
+async function initAppInfo() {
+  try {
+    const info = await api.getAppInfo();
+    if (!info) return;
+    const vText = `v${info.version}`;
+    const commitText = info.commit_hash ? ` (${info.commit_hash})` : '';
+    const fullText = `Geko ${vText}${commitText} [${info.build_profile}]`;
+
+    const statusVersion = $('status-version');
+    if (statusVersion) {
+      statusVersion.textContent = `${vText}${commitText}`;
+      statusVersion.title = `${fullText} on ${info.target_os} (${info.target_arch})\nClick for build details`;
+      statusVersion.addEventListener('click', () => {
+        showInfo('About Geko',
+          `Geko Code Editor\n` +
+          `Version: ${info.version}\n` +
+          (info.commit_hash ? `Commit: ${info.commit_hash}\n` : '') +
+          `Profile: ${info.build_profile}\n` +
+          `Platform: ${info.target_os} (${info.target_arch})\n` +
+          `Runtime: ${api.isTauri ? 'Tauri 2 (Native)' : 'Web Browser'}`
+        );
+      });
+    }
+
+    const brand = document.querySelector('.topbar-brand');
+    if (brand) {
+      brand.title = `${fullText}\nClick for details`;
+      brand.style.cursor = 'pointer';
+      brand.addEventListener('click', () => {
+        showInfo('About Geko',
+          `Geko Code Editor\n` +
+          `Version: ${info.version}\n` +
+          (info.commit_hash ? `Commit: ${info.commit_hash}\n` : '') +
+          `Profile: ${info.build_profile}\n` +
+          `Platform: ${info.target_os} (${info.target_arch})\n` +
+          `Runtime: ${api.isTauri ? 'Tauri 2 (Native)' : 'Web Browser'}`
+        );
+      });
+    }
+  } catch (err) {
+    console.warn('Could not load app info:', err);
+  }
+}
 
 async function init() {
   setSidebar(!isNarrow());
@@ -1275,6 +1318,7 @@ async function init() {
   renderTabs();
   updateStatus();
   clampLayout();
+  initAppInfo();
 }
 
 init();
