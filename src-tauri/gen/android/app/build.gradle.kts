@@ -30,9 +30,16 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "dev.codeeditor.ide"
         minSdk = 24
-        targetSdk = 28
-        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
-        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        val envVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
+            ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+        val envVersionName = System.getenv("VERSION_NAME")
+
+        versionCode = envVersionCode
+            ?: tauriProperties.getProperty("tauri.android.versionCode")?.toIntOrNull()
+            ?: 1
+        versionName = envVersionName
+            ?: tauriProperties.getProperty("tauri.android.versionName")
+            ?: "0.1.0"
     }
     lint {
         abortOnError = false

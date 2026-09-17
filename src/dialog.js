@@ -171,3 +171,60 @@ export function askFolder(roots, initial = '') {
     input.select();
   });
 }
+
+/** Show an informative modal dialog with a Close button. */
+export function showInfo(title, message) {
+  const backdrop = ensureHost();
+  backdrop.textContent = '';
+  backdrop.hidden = false;
+
+  const box = document.createElement('div');
+  box.className = 'modal';
+
+  const heading = document.createElement('div');
+  heading.className = 'modal-title';
+  heading.textContent = title;
+  box.appendChild(heading);
+
+  const body = document.createElement('div');
+  body.className = 'modal-body';
+  body.style.whiteSpace = 'pre-wrap';
+  body.style.fontSize = '13px';
+  body.style.lineHeight = '1.6';
+  body.style.color = 'var(--fg-dim, #ccc)';
+  body.style.margin = '12px 0 20px 0';
+  body.textContent = message;
+  box.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  const ok = document.createElement('button');
+  ok.className = 'tool primary';
+  ok.textContent = 'Close';
+  actions.appendChild(ok);
+  box.appendChild(actions);
+
+  backdrop.appendChild(box);
+
+  return new Promise((resolve) => {
+    const finish = () => {
+      backdrop.hidden = true;
+      backdrop.textContent = '';
+      document.removeEventListener('keydown', onKey, true);
+      resolve();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape' || e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        finish();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    ok.addEventListener('click', finish);
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) finish();
+    });
+    ok.focus();
+  });
+}

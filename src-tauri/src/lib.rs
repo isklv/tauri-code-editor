@@ -717,6 +717,32 @@ fn github_list_repos(token: String) -> Result<Vec<git::GitHubRepo>, String> {
     git::github_list_repos(&token)
 }
 
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct AppInfo {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub build_profile: &'static str,
+    pub target_os: &'static str,
+    pub target_arch: &'static str,
+    pub commit_hash: Option<&'static str>,
+}
+
+#[tauri::command]
+fn get_app_info() -> AppInfo {
+    AppInfo {
+        name: "Geko",
+        version: env!("CARGO_PKG_VERSION"),
+        build_profile: if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
+        target_os: std::env::consts::OS,
+        target_arch: std::env::consts::ARCH,
+        commit_hash: option_env!("GIT_COMMIT_HASH"),
+    }
+}
+
 // ── Setup ──
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -727,6 +753,7 @@ pub fn run() {
         .manage(Arc::new(FsWatcher::default()))
         .manage(Arc::new(linux_env::InstallState::default()))
         .invoke_handler(tauri::generate_handler![
+            get_app_info,
             default_root,
             quick_roots,
             list_dir,

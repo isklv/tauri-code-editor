@@ -12,7 +12,8 @@
     "tauri:build": "tauri build",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk --target aarch64",
-    "android:build:all": "tauri android build --apk"
+    "android:build:all": "tauri android build --apk",
+    "version": "node scripts/version.js"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

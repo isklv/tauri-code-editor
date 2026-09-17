@@ -358,3 +358,20 @@ export async function githubListRepos(token) {
   return res.json();
 }
 
+// ── Application Info ──
+
+export async function getAppInfo() {
+  if (!isTauri) {
+    return {
+      name: 'Geko',
+      version: '0.1.0',
+      build_profile: 'dev',
+      target_os: 'browser',
+      target_arch: 'unknown',
+      commit_hash: null,
+    };
+  }
+  return invoke('get_app_info');
+}
+
+
