@@ -142,7 +142,7 @@ pub struct Root {
 fn root_candidates(app: &AppHandle) -> Vec<Root> {
     let p = app.path();
     #[cfg(target_os = "android")]
-    let roots = {
+    let roots: Vec<(&str, tauri::Result<PathBuf>)> = {
         let mut r = Vec::new();
         // Priority 1: geko.workspace on shared storage (accessible to user and file managers)
         let main_candidates = [
@@ -188,7 +188,7 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
         r
     };
     #[cfg(not(target_os = "android"))]
-    let roots = {
+    let roots: Vec<(&str, tauri::Result<PathBuf>)> = {
         let mut r = Vec::new();
         if let Ok(home_dir) = p.home_dir() {
             let home_workspace = home_dir.join("geko.workspace");
