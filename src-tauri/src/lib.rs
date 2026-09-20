@@ -65,14 +65,20 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     out
 }
 
-#[allow(dead_code)]
-fn ensure_starter_project(dir: &Path) {
+pub fn ensure_starter_project(dir: &Path) {
     if !dir.exists() {
         let _ = fs::create_dir_all(dir);
     }
+    // Remove any legacy starter files from earlier builds (index.html, style.css, main.js)
+    // so that only README.md remains in the workspace.
+    for file in &["index.html", "style.css", "main.js"] {
+        let path = dir.join(file);
+        if path.exists() {
+            let _ = fs::remove_file(path);
+        }
+    }
     let readme_path = dir.join("README.md");
-    if !readme_path.exists() {
-        let readme = "# 🦎 Geko\n\n\
+    let readme = "# 🦎 Geko\n\n\
 **Geko** — быстрый редактор кода для Android и десктопа на базе Tauri v2, Monaco Editor и xterm.js.\n\n\
 ---\n\n\
 ## 🚀 Основные возможности\n\n\
@@ -120,8 +126,7 @@ fn ensure_starter_project(dir: &Path) {
   - Нативные векторные SVG-иконки для папок и типов файлов.\n\
   - Встроенный визуализатор различий (Diff Editor) для Git.\n\
   - Поддержка Samsung DeX и свободной смены размера окна.\n";
-        let _ = fs::write(readme_path, readme);
-    }
+    let _ = fs::write(readme_path, readme);
 }
 
 #[derive(Serialize)]
@@ -132,37 +137,71 @@ pub struct Root {
 
 /// Places worth offering as a starting folder, most specific first.
 ///
-/// On Android, offer a dedicated workspace in Documents with starter files,
-/// followed by Documents, Downloads, shared storage, and app-private storage.
+/// On Android, prioritize Documents/workspace on shared storage,
+/// followed by Documents, Downloads, and Shared storage.
 fn root_candidates(app: &AppHandle) -> Vec<Root> {
     let p = app.path();
     #[cfg(target_os = "android")]
     let roots = {
         let mut r = Vec::new();
-        // Priority 1: Documents/workspace (on shared storage, easily accessible to user and file managers)
-        let doc_workspace = PathBuf::from("/storage/emulated/0/Documents/workspace");
-        if fs::create_dir_all(&doc_workspace).is_ok() && fs::read_dir(&doc_workspace).is_ok() {
-            ensure_starter_project(&doc_workspace);
-            r.push(("Workspace", Ok(doc_workspace)));
-        } else if let Ok(app_data) = p.app_data_dir() {
-            let app_workspace = app_data.join("workspace");
-            let _ = fs::create_dir_all(&app_workspace);
-            ensure_starter_project(&app_workspace);
-            r.push(("Workspace", Ok(app_workspace)));
+        // Priority 1: Documents/workspace on shared storage (accessible to user and file managers)
+        let doc_candidates = [
+            PathBuf::from("/storage/emulated/0/Documents/workspace"),
+            PathBuf::from("/sdcard/Documents/workspace"),
+        ];
+        let mut found_doc_workspace = false;
+        for ws in &doc_candidates {
+            if let Some(parent) = ws.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if fs::create_dir_all(ws).is_ok() && fs::read_dir(ws).is_ok() {
+                ensure_starter_project(ws);
+                r.push(("Workspace", Ok(ws.clone())));
+                found_doc_workspace = true;
+                break;
+            }
         }
+
+        // Fallback workspace if shared Documents is not accessible yet (e.g. before user grants All files access)
+        if !found_doc_workspace {
+            let app_data = p.app_data_dir().unwrap_or_default();
+            let fallback_candidates = [
+                PathBuf::from("/storage/emulated/0/Android/data/dev.codeeditor.ide/files/workspace"),
+                app_data.join("files").join("workspace"),
+                app_data.join("workspace"),
+            ];
+            for ws in &fallback_candidates {
+                if ws.as_os_str().is_empty() {
+                    continue;
+                }
+                if fs::create_dir_all(ws).is_ok() && fs::read_dir(ws).is_ok() {
+                    ensure_starter_project(ws);
+                    r.push(("Workspace", Ok(ws.clone())));
+                    break;
+                }
+            }
+        }
+
         r.push(("Documents", Ok(PathBuf::from("/storage/emulated/0/Documents"))));
         r.push(("Downloads", Ok(PathBuf::from("/storage/emulated/0/Download"))));
         r.push(("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))));
-        r.push(("App storage", p.app_data_dir()));
         r
     };
     #[cfg(not(target_os = "android"))]
-    let roots = vec![
-        ("Home", p.home_dir()),
-        ("Documents", p.document_dir()),
-        ("Downloads", p.download_dir()),
-        ("App storage", p.app_data_dir()),
-    ];
+    let roots = {
+        let mut r = Vec::new();
+        if let Ok(doc_dir) = p.document_dir() {
+            let doc_workspace = doc_dir.join("workspace");
+            if fs::create_dir_all(&doc_workspace).is_ok() && fs::read_dir(&doc_workspace).is_ok() {
+                ensure_starter_project(&doc_workspace);
+                r.push(("Workspace", Ok(doc_workspace)));
+            }
+        }
+        r.push(("Home", p.home_dir()));
+        r.push(("Documents", p.document_dir()));
+        r.push(("Downloads", p.download_dir()));
+        r
+    };
     let mut roots = roots;
     if cfg!(unix) {
         roots.push(("Filesystem", Ok(PathBuf::from("/"))));
@@ -172,10 +211,6 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
     let mut out = Vec::new();
     for (name, dir) in roots {
         let Ok(dir) = dir else { continue };
-        // `app_data_dir` may not exist yet on a fresh install.
-        if !dir.exists() && name == "App storage" {
-            let _ = fs::create_dir_all(&dir);
-        }
         if fs::read_dir(&dir).is_err() || seen.contains(&dir) {
             continue;
         }

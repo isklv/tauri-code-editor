@@ -277,11 +277,21 @@ api.onFsChange(() => {
   scheduleTreeRefresh();
 });
 
+function isPrivateAppRoot(path) {
+  if (!path) return true;
+  const p = path.replace(/[\\/]+$/, '');
+  return p === '/data/user/0/dev.codeeditor.ide' ||
+         p === '/data/data/dev.codeeditor.ide' ||
+         /\/dev\.codeeditor\.ide$/.test(p);
+}
+
 window.addEventListener('focus', async () => {
-  if (!rootPath) {
+  if (!rootPath || isPrivateAppRoot(rootPath) || rootPath.includes('dev.codeeditor.ide')) {
     try {
       const def = await api.defaultRoot();
-      if (def) await openFolder(def);
+      if (def && (!rootPath || isPrivateAppRoot(rootPath) || (!rootPath.includes('Documents') && def.includes('Documents')))) {
+        await openFolder(def);
+      }
     } catch {}
   }
   scheduleTreeRefresh(50);
@@ -695,6 +705,10 @@ function cycleTab(step) {
 // ── Folder ──
 
 async function openFolder(path) {
+  if (isPrivateAppRoot(path)) {
+    console.warn('Cannot open private app sandbox root:', path);
+    return false;
+  }
   try {
     await tree.setRoot(path);
   } catch (e) {
@@ -1321,7 +1335,12 @@ async function initAppInfo() {
 
 async function init() {
   setSidebar(!isNarrow());
-  const savedRoot = localStorage.getItem('geko_last_root');
+  let savedRoot = localStorage.getItem('geko_last_root');
+  if (savedRoot && (isPrivateAppRoot(savedRoot) || savedRoot.includes('dev.codeeditor.ide'))) {
+    console.log('Clearing invalid app root from localStorage:', savedRoot);
+    localStorage.removeItem('geko_last_root');
+    savedRoot = null;
+  }
   let opened = false;
   if (savedRoot) {
     try {
@@ -1333,7 +1352,9 @@ async function init() {
   if (!opened) {
     try {
       const defRoot = await api.defaultRoot();
-      await openFolder(defRoot);
+      if (defRoot) {
+        await openFolder(defRoot);
+      }
     } catch (e) {
       setStatus(`Cannot determine a starting folder: ${e}`, true);
     }

@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 use std::{env, fs};
 
 use tauri_code_editor::{
-    normalize_path, read_dir_listing, read_text_file, spawn_shell, write_text_file,
+    ensure_starter_project, normalize_path, read_dir_listing, read_text_file, spawn_shell,
+    write_text_file,
 };
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -387,3 +388,26 @@ fn normalize_path_resolves_parent_and_current_segments_lexically() {
     let p2 = Path::new("/storage/emulated/0/./Documents/Projects");
     assert_eq!(normalize_path(p2), Path::new("/storage/emulated/0/Documents/Projects"));
 }
+
+#[test]
+fn ensure_starter_project_creates_readme_and_removes_legacy_files() {
+    let dir = temp_dir("starter-test");
+    // Simulate legacy starter files
+    fs::write(dir.join("index.html"), "<h1>old</h1>").unwrap();
+    fs::write(dir.join("style.css"), "body {}").unwrap();
+    fs::write(dir.join("main.js"), "console.log(1);").unwrap();
+
+    ensure_starter_project(&dir);
+
+    assert!(!dir.join("index.html").exists(), "legacy index.html should be removed");
+    assert!(!dir.join("style.css").exists(), "legacy style.css should be removed");
+    assert!(!dir.join("main.js").exists(), "legacy main.js should be removed");
+
+    let readme = dir.join("README.md");
+    assert!(readme.exists(), "README.md should exist");
+    let content = fs::read_to_string(readme).unwrap();
+    assert!(content.contains("# 🦎 Geko"));
+    assert!(content.contains("Changelog"));
+    assert!(content.contains("v0.1.0"));
+}
+
