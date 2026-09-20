@@ -69,12 +69,7 @@ export class TerminalPanel {
     this.term.loadAddon(this.fitAddon);
     this.term.loadAddon(new WebLinksAddon());
     this.term.open(host);
-    if (this.term.textarea) {
-      this.term.textarea.setAttribute('autocomplete', 'off');
-      this.term.textarea.setAttribute('autocorrect', 'off');
-      this.term.textarea.setAttribute('autocapitalize', 'none');
-      this.term.textarea.setAttribute('spellcheck', 'false');
-    }
+    this.setupAndroidInputFix();
 
     this.term.onData((data) => this.send(data));
 
@@ -112,7 +107,8 @@ export class TerminalPanel {
   }
 
   /** Send input to the shell, applying a pending Ctrl from the helper bar. */
-  send(data) {
+  send(data, fromHelper = false) {
+    if (fromHelper && this.resetInputState) this.resetInputState();
     if (this.ctrlSticky) {
       this.ctrlSticky = false;
       this.keyBar?.querySelector('.term-key.sticky')?.classList.remove('sticky');
@@ -137,12 +133,170 @@ export class TerminalPanel {
           this.ctrlSticky = !this.ctrlSticky;
           key.classList.toggle('sticky', this.ctrlSticky);
         } else {
-          this.send(sequence);
+          this.send(sequence, true);
         }
         this.term.focus();
       });
       bar.appendChild(key);
     }
+  }
+
+  setupAndroidInputFix() {
+    const textarea = this.term.textarea;
+    if (!textarea) return;
+
+    textarea.setAttribute('autocomplete', 'off');
+    textarea.setAttribute('autocorrect', 'off');
+    textarea.setAttribute('autocapitalize', 'none');
+    textarea.setAttribute('spellcheck', 'false');
+    textarea.setAttribute('enterkeyhint', 'enter');
+
+    // On Android, virtual keyboards (like Gboard) initiate IME composition sessions
+    // for all words by default. Because xterm's CompositionHelper displays the composing
+    // text in a separate overlay and delays sending it to the PTY shell, the buffer cursor
+    // remains stationary at the beginning of the word while typing.
+    //
+    // We intercept composition events on Android so the faulty overlay never activates,
+    // and process input events directly via diffs to send every character to the shell
+    // immediately, keeping the cursor moving in real time.
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (!isAndroid) return;
+
+    let prevValue = '';
+    let lastBackspaceTime = 0;
+
+    this.resetInputState = () => {
+      prevValue = '';
+      if (textarea.value) textarea.value = '';
+    };
+
+    // Capture phase: intercept before xterm's CompositionHelper sees it
+    textarea.addEventListener(
+      'compositionstart',
+      (e) => {
+        e.stopImmediatePropagation();
+      },
+      true,
+    );
+
+    textarea.addEventListener(
+      'compositionupdate',
+      (e) => {
+        e.stopImmediatePropagation();
+      },
+      true,
+    );
+
+    textarea.addEventListener(
+      'compositionend',
+      (e) => {
+        e.stopImmediatePropagation();
+        textarea.value = '';
+        prevValue = '';
+      },
+      true,
+    );
+
+    textarea.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Backspace' || e.keyCode === 8) {
+          lastBackspaceTime = Date.now();
+        }
+        if (e.key === 'Enter' || e.keyCode === 13) {
+          prevValue = '';
+          textarea.value = '';
+        }
+      },
+      true,
+    );
+
+    textarea.addEventListener(
+      'input',
+      (e) => {
+        const curValue = textarea.value;
+
+        // Enter key is handled by xterm keydown (keyCode 13 -> \r); don't duplicate
+        if (
+          e.inputType === 'insertLineBreak' ||
+          e.inputType === 'insertParagraph' ||
+          curValue === '\n' ||
+          curValue === '\r'
+        ) {
+          textarea.value = '';
+          prevValue = '';
+          return;
+        }
+
+        // Backspace via soft keyboard
+        if (e.inputType === 'deleteContentBackward') {
+          if (Date.now() - lastBackspaceTime > 100) {
+            this.send('\x7f');
+          }
+          prevValue = curValue;
+          return;
+        }
+
+        if (curValue === prevValue) return;
+
+        if (curValue.startsWith(prevValue)) {
+          // Characters appended (normal typing)
+          const diff = curValue.slice(prevValue.length);
+          if (diff) {
+            this.send(diff);
+          }
+        } else if (prevValue.startsWith(curValue)) {
+          // Characters deleted
+          const count = prevValue.length - curValue.length;
+          for (let i = 0; i < count; i++) {
+            this.send('\x7f');
+          }
+        } else {
+          // Word was replaced or corrected by autocomplete suggestions
+          let commonLen = 0;
+          while (
+            commonLen < prevValue.length &&
+            commonLen < curValue.length &&
+            prevValue[commonLen] === curValue[commonLen]
+          ) {
+            commonLen++;
+          }
+          const deleteCount = prevValue.length - commonLen;
+          for (let i = 0; i < deleteCount; i++) {
+            this.send('\x7f');
+          }
+          const toInsert = curValue.slice(commonLen);
+          if (toInsert) {
+            this.send(toInsert);
+          }
+        }
+
+        prevValue = curValue;
+
+        // Prevent textarea from growing indefinitely
+        if (curValue.length > 25) {
+          textarea.value = '';
+          prevValue = '';
+        }
+      },
+      true,
+    );
+
+    textarea.addEventListener('blur', () => {
+      this.resetInputState();
+    });
+
+    textarea.addEventListener('focus', () => {
+      // Ensure terminal fits and scrolls to cursor when keyboard pops up
+      setTimeout(() => {
+        this.fit();
+        this.term.scrollToBottom();
+      }, 100);
+      setTimeout(() => {
+        this.fit();
+        this.term.scrollToBottom();
+      }, 350);
+    });
   }
 
   fit() {

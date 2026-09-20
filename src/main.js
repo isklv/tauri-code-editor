@@ -865,10 +865,17 @@ function toggleTerminal(force) {
   resizer.classList.toggle('hidden', hide);
   if (!hide) {
     if (isNarrow()) {
-      panel.style.height = '42vh';
+      const isKeyboardOpen = document.body.classList.contains('keyboard-open');
+      if (isKeyboardOpen && window.visualViewport) {
+        const topbarHeight = $('topbar')?.offsetHeight || 42;
+        panel.style.height = `${Math.max(120, window.visualViewport.height - topbarHeight)}px`;
+      } else {
+        panel.style.height = '42vh';
+      }
     }
     terminal.fit();
     terminal.focus();
+    terminal.term.scrollToBottom();
   } else {
     editor.focus();
   }
@@ -1233,10 +1240,16 @@ makeResizer($('resizer-panel'), (e) => {
   terminal.fit();
 });
 
+function isTerminalFocused() {
+  const active = document.activeElement;
+  return active === terminal?.term?.textarea || $('terminal')?.contains(active);
+}
+
 function maxPanelHeight() {
   const main = document.querySelector('.main').getBoundingClientRect().height;
   const chrome = ($('topbar')?.offsetHeight || 38) + ($('tabbar')?.offsetHeight || 35) + ($('resizer-panel')?.offsetHeight || 4);
-  const MIN_EDITOR = 100;
+  const isKeyboardOpen = document.body.classList.contains('keyboard-open');
+  const MIN_EDITOR = (isKeyboardOpen && isNarrow() && isTerminalFocused()) ? 0 : 100;
   return Math.max(60, main - chrome - MIN_EDITOR);
 }
 
@@ -1273,7 +1286,49 @@ function clampLayout() {
   terminal.fit();
 }
 
+function initViewportKeyboardHandling() {
+  if (!window.visualViewport) return;
+
+  const app = $('app');
+  const panel = $('panel');
+
+  const onViewportChange = () => {
+    const vv = window.visualViewport;
+    const isKeyboardOpen = (window.innerHeight - vv.height) > 100;
+    document.body.classList.toggle('keyboard-open', isKeyboardOpen);
+
+    // Keep app height matching the visible area above the soft keyboard
+    app.style.height = `${vv.height}px`;
+    document.documentElement.style.setProperty('--app-height', `${vv.height}px`);
+
+    // Ensure visual viewport isn't panned off-screen
+    if (vv.offsetTop > 0) {
+      window.scrollTo(0, 0);
+    }
+
+    if (!panel.classList.contains('hidden')) {
+      if (isKeyboardOpen && isNarrow() && isTerminalFocused()) {
+        const topbarHeight = $('topbar')?.offsetHeight || 42;
+        const available = Math.max(120, vv.height - topbarHeight);
+        panel.style.height = `${available}px`;
+      } else if (!isKeyboardOpen && isNarrow()) {
+        panel.style.height = '42vh';
+      }
+
+      clampLayout();
+      terminal.fit();
+      terminal.term.scrollToBottom();
+    } else {
+      clampLayout();
+    }
+  };
+
+  window.visualViewport.addEventListener('resize', onViewportChange);
+  window.visualViewport.addEventListener('scroll', onViewportChange);
+}
+
 window.addEventListener('resize', clampLayout);
+initViewportKeyboardHandling();
 
 async function initAppInfo() {
   try {
