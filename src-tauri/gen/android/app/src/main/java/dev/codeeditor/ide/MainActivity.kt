@@ -9,6 +9,8 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -16,6 +18,17 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
     requestStoragePermissions()
     requestAllFilesAccessOnce()
+
+    ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { view, insets ->
+      val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
+      val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+      if (imeVisible && imeInsets.bottom > 0) {
+        view.setPadding(0, 0, 0, imeInsets.bottom)
+      } else {
+        view.setPadding(0, 0, 0, 0)
+      }
+      insets
+    }
   }
 
   private fun requestStoragePermissions() {
