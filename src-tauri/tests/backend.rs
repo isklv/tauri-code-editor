@@ -4,7 +4,9 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 use std::{env, fs};
 
-use tauri_code_editor::{read_dir_listing, read_text_file, spawn_shell, write_text_file};
+use tauri_code_editor::{
+    normalize_path, read_dir_listing, read_text_file, spawn_shell, write_text_file,
+};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let dir = env::temp_dir().join(format!("geko-test-{name}"));
@@ -373,4 +375,15 @@ fn git_repo_status_on_local_repo() {
     commit(None, dir.to_str().unwrap(), "Initial commit").unwrap();
     let status_clean = get_repo_status(None, dir.to_str().unwrap()).unwrap();
     assert_eq!(status_clean.total_changes, 0);
+}
+
+#[test]
+fn normalize_path_resolves_parent_and_current_segments_lexically() {
+    use std::path::Path;
+
+    let p = Path::new("/storage/emulated/0/Documents/../Download");
+    assert_eq!(normalize_path(p), Path::new("/storage/emulated/0/Download"));
+
+    let p2 = Path::new("/storage/emulated/0/./Documents/Projects");
+    assert_eq!(normalize_path(p2), Path::new("/storage/emulated/0/Documents/Projects"));
 }

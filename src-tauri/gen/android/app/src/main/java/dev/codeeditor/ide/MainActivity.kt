@@ -20,15 +20,11 @@ class MainActivity : TauriActivity() {
 
   private fun requestStoragePermissions() {
     val permissions = mutableListOf<String>()
-    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
-      if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-      }
+    if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+      permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
-    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-      if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-        permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-      }
+    if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+      permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
     if (permissions.isNotEmpty()) {
       requestPermissions(permissions.toTypedArray(), 1001)
