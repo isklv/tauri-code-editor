@@ -70,61 +70,57 @@ fn ensure_starter_project(dir: &Path) {
     if !dir.exists() {
         let _ = fs::create_dir_all(dir);
     }
-    if let Ok(mut read) = fs::read_dir(dir) {
-        if read.next().is_none() {
-            let readme = "# Welcome to Geko\n\n\
-Geko is a modern code editor with terminal and Git integration.\n\n\
-## Getting Started\n\
-- 📁 Use the sidebar to browse and manage your project files\n\
-- ⚡ Press Ctrl+P (or tap search) to quickly open files\n\
-- 💻 Open the terminal panel below for an Alpine Linux shell (`apk add ...`)\n\
-- 🌿 Use the Git panel to clone and manage repositories\n";
-            let _ = fs::write(dir.join("README.md"), readme);
-
-            let index_html = "<!DOCTYPE html>\n\
-<html lang=\"en\">\n\
-<head>\n\
-  <meta charset=\"UTF-8\">\n\
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
-  <title>Geko Project</title>\n\
-  <link rel=\"stylesheet\" href=\"style.css\">\n\
-</head>\n\
-<body>\n\
-  <div class=\"card\">\n\
-    <h1>Hello from Geko</h1>\n\
-    <p>Edit this file or create new ones to build your app.</p>\n\
-  </div>\n\
-  <script src=\"main.js\"></script>\n\
-</body>\n\
-</html>\n";
-            let _ = fs::write(dir.join("index.html"), index_html);
-
-            let main_js = "// Welcome to Geko!\n\
-console.log('Welcome to your new project in Geko!');\n";
-            let _ = fs::write(dir.join("main.js"), main_js);
-
-            let style_css = "body {\n\
-  margin: 0;\n\
-  font-family: system-ui, -apple-system, sans-serif;\n\
-  background: #1e1e1e;\n\
-  color: #f0f0f0;\n\
-  display: flex;\n\
-  justify-content: center;\n\
-  align-items: center;\n\
-  min-height: 100vh;\n\
-}\n\n\
-.card {\n\
-  background: #252526;\n\
-  padding: 2rem;\n\
-  border-radius: 8px;\n\
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);\n\
-  text-align: center;\n\
-}\n\n\
-h1 {\n\
-  color: #71ec14;\n\
-}\n";
-            let _ = fs::write(dir.join("style.css"), style_css);
-        }
+    let readme_path = dir.join("README.md");
+    if !readme_path.exists() {
+        let readme = "# 🦎 Geko\n\n\
+**Geko** — быстрый редактор кода для Android и десктопа на базе Tauri v2, Monaco Editor и xterm.js.\n\n\
+---\n\n\
+## 🚀 Основные возможности\n\n\
+### 📁 Проводник файлов (Explorer)\n\
+- Древовидная файловая структура проекта.\n\
+- Создание файлов и папок (кнопка `＋` или контекстное меню).\n\
+- Переименование, удаление и копирование пути к файлу.\n\
+- Открытие любой папки в качестве корня рабочей области.\n\n\
+### 📝 Редактор кода (Monaco Editor)\n\
+- Полнофункциональный редактор из VS Code.\n\
+- Подсветка синтаксиса для сотен языков (JS, TS, Python, Rust, C/C++, HTML, CSS, JSON, Go и др.).\n\
+- Автодополнение кода (IntelliSense) с путями файлов и синтаксическими сниппетами.\n\
+- Полноценная поддержка композиции и ввода с мобильных софт-клавиатур.\n\n\
+### ⚡ Быстрый поиск файлов (Quick Open / Ctrl+P)\n\
+- Моментальный нечёткий поиск файлов по всему проекту через верхнюю строку поиска или комбинацию `Ctrl+P`.\n\
+- Поиск по содержимому файлов на вкладке Search (`Ctrl+Shift+F`).\n\n\
+### 💻 Встроенный терминал и Linux-окружение\n\
+- Терминал на базе xterm.js с настоящим PTY-интерфейсом.\n\
+- Автономное окружение **Alpine Linux** через PRoot прямо внутри приложения.\n\
+- Пакетный менеджер **`apk`**: установка компиляторов, интерпретаторов и CLI-инструментов (`apk add python3 git nodejs gcc make bash curl`).\n\
+- Вспомогательная панель клавиш для мобильных устройств: Esc, Tab, Ctrl, Alt, стрелки курсора, пайпы (`|`, `~`, `/`).\n\n\
+### 🌿 Контроль версий Git & GitHub\n\
+- Встроенная панель Source Control (`Ctrl+Shift+G`).\n\
+- Отслеживание изменений (staged / unstaged), diff просмотр файлов.\n\
+- Создание коммитов, переключение веток, sync / push / pull.\n\
+- Клонирование публичных и приватных репозиториев GitHub по Personal Access Token.\n\n\
+### 📱 Мобильная оптимизация\n\
+- Адаптивный интерфейс: нижняя панель навигации для телефонов и боковая панель (Activity Bar) для планшетов и десктопа.\n\
+- Поддержка многооконного режима и рабочего стола Samsung DeX.\n\
+- Сохранение открытых файлов и сессий.\n\n\
+---\n\n\
+## 📋 История изменений (Changelog)\n\n\
+### v0.1.0\n\
+- **Рабочая область и проводник**:\n\
+  - Инициализация рабочей директории `Documents/workspace` со справочным `README.md`.\n\
+  - Исправлено отображение файлов в проводнике на Android (устранены ограничения Scoped Storage).\n\
+  - Запоминание и автовосстановление последней открытой папки и активных файлов при перезапуске.\n\
+- **Терминал и Alpine Linux**:\n\
+  - Поддержка Alpine Linux внутри PRoot с автономным менеджером пакетов `apk`.\n\
+  - Устранена ошибка прав доступа W^X и EPERM на Android.\n\
+  - Исправлено залипание и дублирование символов при вводе с мобильных софт-клавиатур.\n\
+  - Предотвращено ложное закрытие терминала при старте сессий.\n\
+- **Интерфейс и навигация**:\n\
+  - Панель Activity Bar (Explorer, Search, Git, Terminal) и мобильная нижняя панель.\n\
+  - Нативные векторные SVG-иконки для папок и типов файлов.\n\
+  - Встроенный визуализатор различий (Diff Editor) для Git.\n\
+  - Поддержка Samsung DeX и свободной смены размера окна.\n";
+        let _ = fs::write(readme_path, readme);
     }
 }
 
@@ -136,23 +132,23 @@ pub struct Root {
 
 /// Places worth offering as a starting folder, most specific first.
 ///
-/// On Android, offer a dedicated Projects workspace with starter files,
+/// On Android, offer a dedicated workspace in Documents with starter files,
 /// followed by Documents, Downloads, shared storage, and app-private storage.
 fn root_candidates(app: &AppHandle) -> Vec<Root> {
     let p = app.path();
     #[cfg(target_os = "android")]
     let roots = {
         let mut r = Vec::new();
-        // Priority 1: Documents/Projects (on shared storage, easily accessible to user and file managers)
-        let doc_projects = PathBuf::from("/storage/emulated/0/Documents/Projects");
-        if fs::create_dir_all(&doc_projects).is_ok() && fs::read_dir(&doc_projects).is_ok() {
-            ensure_starter_project(&doc_projects);
-            r.push(("Projects", Ok(doc_projects)));
+        // Priority 1: Documents/workspace (on shared storage, easily accessible to user and file managers)
+        let doc_workspace = PathBuf::from("/storage/emulated/0/Documents/workspace");
+        if fs::create_dir_all(&doc_workspace).is_ok() && fs::read_dir(&doc_workspace).is_ok() {
+            ensure_starter_project(&doc_workspace);
+            r.push(("Workspace", Ok(doc_workspace)));
         } else if let Ok(app_data) = p.app_data_dir() {
-            let app_projects = app_data.join("workspace");
-            let _ = fs::create_dir_all(&app_projects);
-            ensure_starter_project(&app_projects);
-            r.push(("Projects", Ok(app_projects)));
+            let app_workspace = app_data.join("workspace");
+            let _ = fs::create_dir_all(&app_workspace);
+            ensure_starter_project(&app_workspace);
+            r.push(("Workspace", Ok(app_workspace)));
         }
         r.push(("Documents", Ok(PathBuf::from("/storage/emulated/0/Documents"))));
         r.push(("Downloads", Ok(PathBuf::from("/storage/emulated/0/Download"))));
