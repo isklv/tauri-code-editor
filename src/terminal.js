@@ -107,8 +107,7 @@ export class TerminalPanel {
   }
 
   /** Send input to the shell, applying a pending Ctrl from the helper bar. */
-  send(data, fromHelper = false) {
-    if (fromHelper && this.resetInputState) this.resetInputState();
+  send(data) {
     if (this.ctrlSticky) {
       this.ctrlSticky = false;
       this.keyBar?.querySelector('.term-key.sticky')?.classList.remove('sticky');
@@ -133,7 +132,7 @@ export class TerminalPanel {
           this.ctrlSticky = !this.ctrlSticky;
           key.classList.toggle('sticky', this.ctrlSticky);
         } else {
-          this.send(sequence, true);
+          this.send(sequence);
         }
         this.term.focus();
       });
@@ -151,26 +150,19 @@ export class TerminalPanel {
     textarea.setAttribute('spellcheck', 'false');
     textarea.setAttribute('enterkeyhint', 'enter');
 
-    // On Android, virtual keyboards (like Gboard) initiate IME composition sessions
-    // for all words by default. Because xterm's CompositionHelper displays the composing
-    // text in a separate overlay and delays sending it to the PTY shell, the buffer cursor
-    // remains stationary at the beginning of the word while typing.
-    //
-    // We intercept composition events on Android so the faulty overlay never activates,
-    // and process input events directly via diffs to send every character to the shell
-    // immediately, keeping the cursor moving in real time.
     const isAndroid = /Android/i.test(navigator.userAgent);
     if (!isAndroid) return;
 
-    let prevValue = '';
-    let lastBackspaceTime = 0;
-
-    this.resetInputState = () => {
-      prevValue = '';
-      if (textarea.value) textarea.value = '';
-    };
-
-    // Capture phase: intercept before xterm's CompositionHelper sees it
+    // On Android, soft keyboards (like Gboard) initiate IME composition sessions
+    // for all words by default. In xterm, CompositionHelper intercepts composition events,
+    // which displays an overlay and withholds characters from the shell until space or enter.
+    // That causes the cursor to freeze blinking at the beginning of the word.
+    //
+    // By intercepting and stopping composition events in the capture phase,
+    // xterm's internal _isComposing flag remains false. When _isComposing is false,
+    // xterm's built-in _handleAnyTextareaChanges() automatically handles keyCode 229
+    // by diffing the textarea value and forwarding each character immediately to
+    // onData, which moves the cursor in real time without duplicating characters.
     textarea.addEventListener(
       'compositionstart',
       (e) => {
@@ -191,100 +183,9 @@ export class TerminalPanel {
       'compositionend',
       (e) => {
         e.stopImmediatePropagation();
-        textarea.value = '';
-        prevValue = '';
       },
       true,
     );
-
-    textarea.addEventListener(
-      'keydown',
-      (e) => {
-        if (e.key === 'Backspace' || e.keyCode === 8) {
-          lastBackspaceTime = Date.now();
-        }
-        if (e.key === 'Enter' || e.keyCode === 13) {
-          prevValue = '';
-          textarea.value = '';
-        }
-      },
-      true,
-    );
-
-    textarea.addEventListener(
-      'input',
-      (e) => {
-        const curValue = textarea.value;
-
-        // Enter key is handled by xterm keydown (keyCode 13 -> \r); don't duplicate
-        if (
-          e.inputType === 'insertLineBreak' ||
-          e.inputType === 'insertParagraph' ||
-          curValue === '\n' ||
-          curValue === '\r'
-        ) {
-          textarea.value = '';
-          prevValue = '';
-          return;
-        }
-
-        // Backspace via soft keyboard
-        if (e.inputType === 'deleteContentBackward') {
-          if (Date.now() - lastBackspaceTime > 100) {
-            this.send('\x7f');
-          }
-          prevValue = curValue;
-          return;
-        }
-
-        if (curValue === prevValue) return;
-
-        if (curValue.startsWith(prevValue)) {
-          // Characters appended (normal typing)
-          const diff = curValue.slice(prevValue.length);
-          if (diff) {
-            this.send(diff);
-          }
-        } else if (prevValue.startsWith(curValue)) {
-          // Characters deleted
-          const count = prevValue.length - curValue.length;
-          for (let i = 0; i < count; i++) {
-            this.send('\x7f');
-          }
-        } else {
-          // Word was replaced or corrected by autocomplete suggestions
-          let commonLen = 0;
-          while (
-            commonLen < prevValue.length &&
-            commonLen < curValue.length &&
-            prevValue[commonLen] === curValue[commonLen]
-          ) {
-            commonLen++;
-          }
-          const deleteCount = prevValue.length - commonLen;
-          for (let i = 0; i < deleteCount; i++) {
-            this.send('\x7f');
-          }
-          const toInsert = curValue.slice(commonLen);
-          if (toInsert) {
-            this.send(toInsert);
-          }
-        }
-
-        prevValue = curValue;
-
-        // Prevent textarea from growing indefinitely
-        if (curValue.length > 25) {
-          textarea.value = '';
-          prevValue = '';
-        }
-      },
-      true,
-    );
-
-    textarea.addEventListener('blur', () => {
-      this.resetInputState();
-    });
 
     textarea.addEventListener('focus', () => {
       // Ensure terminal fits and scrolls to cursor when keyboard pops up
