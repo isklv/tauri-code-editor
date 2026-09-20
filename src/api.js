@@ -234,6 +234,9 @@ export function folderDisplayName(path) {
   if (clean === '/storage/emulated/0' || clean === '/sdcard') {
     return 'Internal Storage';
   }
+  if (clean.endsWith('/geko.workspace') || clean === 'geko.workspace') {
+    return 'geko.workspace';
+  }
   const base = basename(clean);
   if (!base || base === '/' || base === '\\') return 'Root';
   return base;

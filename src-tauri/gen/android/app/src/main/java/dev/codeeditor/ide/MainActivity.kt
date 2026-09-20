@@ -16,8 +16,11 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
-    requestStoragePermissions()
-    requestAllFilesAccessOnce()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      requestAllFilesAccessOnce()
+    } else {
+      requestStoragePermissions()
+    }
 
     ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { view, insets ->
       val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
@@ -74,6 +77,6 @@ class MainActivity : TauriActivity() {
   }
 
   private companion object {
-    const val ASKED_KEY = "asked_all_files_access"
+    const val ASKED_KEY = "asked_all_files_access_v3"
   }
 }
