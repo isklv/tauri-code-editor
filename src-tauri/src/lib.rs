@@ -39,9 +39,93 @@ pub struct DirListing {
 const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024;
 
 fn resolve(path: &str) -> PathBuf {
-    // `canonicalize` fails on paths that do not exist yet, so only use it when it works.
     let p = PathBuf::from(path);
-    fs::canonicalize(&p).unwrap_or(p)
+    #[cfg(not(target_os = "android"))]
+    {
+        fs::canonicalize(&p).unwrap_or(p)
+    }
+    #[cfg(target_os = "android")]
+    {
+        normalize_path(&p)
+    }
+}
+
+pub fn normalize_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            _ => out.push(comp),
+        }
+    }
+    out
+}
+
+#[allow(dead_code)]
+fn ensure_starter_project(dir: &Path) {
+    if !dir.exists() {
+        let _ = fs::create_dir_all(dir);
+    }
+    if let Ok(mut read) = fs::read_dir(dir) {
+        if read.next().is_none() {
+            let readme = "# Welcome to Geko\n\n\
+Geko is a modern code editor with terminal and Git integration.\n\n\
+## Getting Started\n\
+- 📁 Use the sidebar to browse and manage your project files\n\
+- ⚡ Press Ctrl+P (or tap search) to quickly open files\n\
+- 💻 Open the terminal panel below for an Alpine Linux shell (`apk add ...`)\n\
+- 🌿 Use the Git panel to clone and manage repositories\n";
+            let _ = fs::write(dir.join("README.md"), readme);
+
+            let index_html = "<!DOCTYPE html>\n\
+<html lang=\"en\">\n\
+<head>\n\
+  <meta charset=\"UTF-8\">\n\
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
+  <title>Geko Project</title>\n\
+  <link rel=\"stylesheet\" href=\"style.css\">\n\
+</head>\n\
+<body>\n\
+  <div class=\"card\">\n\
+    <h1>Hello from Geko</h1>\n\
+    <p>Edit this file or create new ones to build your app.</p>\n\
+  </div>\n\
+  <script src=\"main.js\"></script>\n\
+</body>\n\
+</html>\n";
+            let _ = fs::write(dir.join("index.html"), index_html);
+
+            let main_js = "// Welcome to Geko!\n\
+console.log('Welcome to your new project in Geko!');\n";
+            let _ = fs::write(dir.join("main.js"), main_js);
+
+            let style_css = "body {\n\
+  margin: 0;\n\
+  font-family: system-ui, -apple-system, sans-serif;\n\
+  background: #1e1e1e;\n\
+  color: #f0f0f0;\n\
+  display: flex;\n\
+  justify-content: center;\n\
+  align-items: center;\n\
+  min-height: 100vh;\n\
+}\n\n\
+.card {\n\
+  background: #252526;\n\
+  padding: 2rem;\n\
+  border-radius: 8px;\n\
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);\n\
+  text-align: center;\n\
+}\n\n\
+h1 {\n\
+  color: #71ec14;\n\
+}\n";
+            let _ = fs::write(dir.join("style.css"), style_css);
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -52,25 +136,38 @@ pub struct Root {
 
 /// Places worth offering as a starting folder, most specific first.
 ///
-/// On Android `home_dir` is the shared storage root (`/storage/emulated/0`),
-/// which is only readable once the user grants "All files access"; the app's
-/// own data directory is the fallback that always works.
+/// On Android, offer a dedicated Projects workspace with starter files,
+/// followed by Documents, Downloads, shared storage, and app-private storage.
 fn root_candidates(app: &AppHandle) -> Vec<Root> {
     let p = app.path();
     #[cfg(target_os = "android")]
-    let mut roots = vec![
-        ("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))),
-        ("Downloads", Ok(PathBuf::from("/storage/emulated/0/Download"))),
-        ("Documents", Ok(PathBuf::from("/storage/emulated/0/Documents"))),
-        ("App storage", p.app_data_dir()),
-    ];
+    let roots = {
+        let mut r = Vec::new();
+        // Priority 1: Documents/Projects (on shared storage, easily accessible to user and file managers)
+        let doc_projects = PathBuf::from("/storage/emulated/0/Documents/Projects");
+        if fs::create_dir_all(&doc_projects).is_ok() && fs::read_dir(&doc_projects).is_ok() {
+            ensure_starter_project(&doc_projects);
+            r.push(("Projects", Ok(doc_projects)));
+        } else if let Ok(app_data) = p.app_data_dir() {
+            let app_projects = app_data.join("workspace");
+            let _ = fs::create_dir_all(&app_projects);
+            ensure_starter_project(&app_projects);
+            r.push(("Projects", Ok(app_projects)));
+        }
+        r.push(("Documents", Ok(PathBuf::from("/storage/emulated/0/Documents"))));
+        r.push(("Downloads", Ok(PathBuf::from("/storage/emulated/0/Download"))));
+        r.push(("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))));
+        r.push(("App storage", p.app_data_dir()));
+        r
+    };
     #[cfg(not(target_os = "android"))]
-    let mut roots = vec![
+    let roots = vec![
         ("Home", p.home_dir()),
         ("Documents", p.document_dir()),
         ("Downloads", p.download_dir()),
         ("App storage", p.app_data_dir()),
     ];
+    let mut roots = roots;
     if cfg!(unix) {
         roots.push(("Filesystem", Ok(PathBuf::from("/"))));
     }

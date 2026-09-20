@@ -277,7 +277,13 @@ api.onFsChange(() => {
   scheduleTreeRefresh();
 });
 
-window.addEventListener('focus', () => {
+window.addEventListener('focus', async () => {
+  if (!rootPath) {
+    try {
+      const def = await api.defaultRoot();
+      if (def) await openFolder(def);
+    } catch {}
+  }
   scheduleTreeRefresh(50);
 });
 
@@ -696,6 +702,9 @@ async function openFolder(path) {
     return false;
   }
   rootPath = path;
+  try {
+    localStorage.setItem('geko_last_root', path);
+  } catch {}
   const name = api.folderDisplayName(path);
   $('root-name').textContent = name;
   if ($('topbar-root-name')) $('topbar-root-name').textContent = name;
@@ -1312,11 +1321,38 @@ async function initAppInfo() {
 
 async function init() {
   setSidebar(!isNarrow());
-  try {
-    await openFolder(await api.defaultRoot());
-  } catch (e) {
-    setStatus(`Cannot determine a starting folder: ${e}`, true);
+  const savedRoot = localStorage.getItem('geko_last_root');
+  let opened = false;
+  if (savedRoot) {
+    try {
+      opened = await openFolder(savedRoot);
+    } catch {
+      opened = false;
+    }
   }
+  if (!opened) {
+    try {
+      const defRoot = await api.defaultRoot();
+      await openFolder(defRoot);
+    } catch (e) {
+      setStatus(`Cannot determine a starting folder: ${e}`, true);
+    }
+  }
+
+  // If no file is open, try to open README.md or the first file in the opened directory
+  if (openFiles.size === 0 && rootPath) {
+    try {
+      const listing = await api.listDir(rootPath);
+      const readme = listing.entries?.find((e) => !e.is_dir && e.name.toLowerCase() === 'readme.md');
+      const firstFile = readme || listing.entries?.find((e) => !e.is_dir);
+      if (firstFile) {
+        await openFile(firstFile.path);
+      }
+    } catch (e) {
+      console.warn('Could not auto-open starter file:', e);
+    }
+  }
+
   await updateLinuxEnvUI();
   await terminal.start(rootPath, currentShellMode);
   ensureLinuxEnv();
