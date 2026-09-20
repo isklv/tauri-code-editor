@@ -113,7 +113,7 @@ pub fn ensure_starter_project(dir: &Path) {
 ## 📋 История изменений (Changelog)\n\n\
 ### v0.1.0\n\
 - **Рабочая область и проводник**:\n\
-  - Инициализация рабочей директории `Documents/workspace` со справочным `README.md`.\n\
+  - Инициализация рабочей директории `geko.workspace` со справочным `README.md`.\n\
   - Исправлено отображение файлов в проводнике на Android (устранены ограничения Scoped Storage).\n\
   - Запоминание и автовосстановление последней открытой папки и активных файлов при перезапуске.\n\
 - **Терминал и Alpine Linux**:\n\
@@ -137,38 +137,38 @@ pub struct Root {
 
 /// Places worth offering as a starting folder, most specific first.
 ///
-/// On Android, prioritize Documents/workspace on shared storage,
-/// followed by Documents, Downloads, and Shared storage.
+/// On Android, prioritize geko.workspace on shared storage,
+/// followed by Shared storage, Documents, and Downloads.
 fn root_candidates(app: &AppHandle) -> Vec<Root> {
     let p = app.path();
     #[cfg(target_os = "android")]
     let roots = {
         let mut r = Vec::new();
-        // Priority 1: Documents/workspace on shared storage (accessible to user and file managers)
-        let doc_candidates = [
-            PathBuf::from("/storage/emulated/0/Documents/workspace"),
-            PathBuf::from("/sdcard/Documents/workspace"),
+        // Priority 1: geko.workspace on shared storage (accessible to user and file managers)
+        let main_candidates = [
+            PathBuf::from("/storage/emulated/0/geko.workspace"),
+            PathBuf::from("/sdcard/geko.workspace"),
         ];
-        let mut found_doc_workspace = false;
-        for ws in &doc_candidates {
+        let mut found_workspace = false;
+        for ws in &main_candidates {
             if let Some(parent) = ws.parent() {
                 let _ = fs::create_dir_all(parent);
             }
             if fs::create_dir_all(ws).is_ok() && fs::read_dir(ws).is_ok() {
                 ensure_starter_project(ws);
                 r.push(("Workspace", Ok(ws.clone())));
-                found_doc_workspace = true;
+                found_workspace = true;
                 break;
             }
         }
 
-        // Fallback workspace if shared Documents is not accessible yet (e.g. before user grants All files access)
-        if !found_doc_workspace {
+        // Fallback workspace if shared root storage is not accessible yet (e.g. before user grants All files access)
+        if !found_workspace {
             let app_data = p.app_data_dir().unwrap_or_default();
             let fallback_candidates = [
-                PathBuf::from("/storage/emulated/0/Android/data/dev.codeeditor.ide/files/workspace"),
-                app_data.join("files").join("workspace"),
-                app_data.join("workspace"),
+                PathBuf::from("/storage/emulated/0/Android/data/dev.codeeditor.ide/files/geko.workspace"),
+                app_data.join("files").join("geko.workspace"),
+                app_data.join("geko.workspace"),
             ];
             for ws in &fallback_candidates {
                 if ws.as_os_str().is_empty() {
@@ -182,19 +182,19 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
             }
         }
 
+        r.push(("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))));
         r.push(("Documents", Ok(PathBuf::from("/storage/emulated/0/Documents"))));
         r.push(("Downloads", Ok(PathBuf::from("/storage/emulated/0/Download"))));
-        r.push(("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))));
         r
     };
     #[cfg(not(target_os = "android"))]
     let roots = {
         let mut r = Vec::new();
-        if let Ok(doc_dir) = p.document_dir() {
-            let doc_workspace = doc_dir.join("workspace");
-            if fs::create_dir_all(&doc_workspace).is_ok() && fs::read_dir(&doc_workspace).is_ok() {
-                ensure_starter_project(&doc_workspace);
-                r.push(("Workspace", Ok(doc_workspace)));
+        if let Ok(home_dir) = p.home_dir() {
+            let home_workspace = home_dir.join("geko.workspace");
+            if fs::create_dir_all(&home_workspace).is_ok() && fs::read_dir(&home_workspace).is_ok() {
+                ensure_starter_project(&home_workspace);
+                r.push(("Workspace", Ok(home_workspace)));
             }
         }
         r.push(("Home", p.home_dir()));

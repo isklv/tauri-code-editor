@@ -289,7 +289,7 @@ window.addEventListener('focus', async () => {
   if (!rootPath || isPrivateAppRoot(rootPath) || rootPath.includes('dev.codeeditor.ide')) {
     try {
       const def = await api.defaultRoot();
-      if (def && (!rootPath || isPrivateAppRoot(rootPath) || (!rootPath.includes('Documents') && def.includes('Documents')))) {
+      if (def && (!rootPath || isPrivateAppRoot(rootPath) || (!rootPath.includes('geko.workspace') && def.includes('geko.workspace')))) {
         await openFolder(def);
       }
     } catch {}
@@ -1336,8 +1336,8 @@ async function initAppInfo() {
 async function init() {
   setSidebar(!isNarrow());
   let savedRoot = localStorage.getItem('geko_last_root');
-  if (savedRoot && (isPrivateAppRoot(savedRoot) || savedRoot.includes('dev.codeeditor.ide'))) {
-    console.log('Clearing invalid app root from localStorage:', savedRoot);
+  if (savedRoot && (isPrivateAppRoot(savedRoot) || savedRoot.includes('dev.codeeditor.ide') || savedRoot.includes('Documents/workspace') || savedRoot.endsWith('/workspace'))) {
+    console.log('Resetting outdated workspace from localStorage:', savedRoot);
     localStorage.removeItem('geko_last_root');
     savedRoot = null;
   }
