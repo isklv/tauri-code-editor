@@ -156,7 +156,7 @@ export function askFolder(roots, initial = '') {
       name.textContent = root.name;
       const path = document.createElement('span');
       path.className = 'modal-list-path';
-      path.textContent = root.path;
+      path.textContent = root.path.includes('/alpine/root') ? '/root' : root.path;
       row.append(name, path);
       row.addEventListener('click', () => finish(root.path));
       list.appendChild(row);

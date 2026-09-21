@@ -529,6 +529,11 @@ fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), Stri
     for dir in ["tmp", "var/tmp", "var/cache/apk", "root", "dev/shm", "run"] {
         let _ = fs::create_dir_all(rootfs_path.join(dir));
     }
+    // Default bunfig.toml to avoid FUSE hardlink ENOENT on Android external storage
+    let bunfig = rootfs_path.join("root").join(".bunfig.toml");
+    if !bunfig.exists() {
+        let _ = fs::write(bunfig, "[install]\nbackend = \"copyfile\"\n");
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -726,7 +731,10 @@ pub fn proot_args(rootfs: &Path, cwd: Option<&str>) -> Vec<String> {
     }
     let mut target_dir = "/root".to_string();
     if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
-        if Path::new(dir).exists() {
+        let p = Path::new(dir);
+        if let Ok(rel) = p.strip_prefix(rootfs) {
+            target_dir = format!("/{}", rel.to_string_lossy());
+        } else if p.exists() {
             args.push("-b".to_string());
             args.push(format!("{dir}:{dir}"));
             target_dir = dir.to_string();
@@ -774,6 +782,11 @@ pub fn ready_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     let rootfs = rootfs_dir(app).ok()?;
     if !proot.exists() || !rootfs_has_shell(&rootfs) {
         return None;
+    }
+    // Ensure bunfig.toml exists in /root
+    let bunfig = rootfs.join("root").join(".bunfig.toml");
+    if !bunfig.exists() {
+        let _ = fs::write(bunfig, "[install]\nbackend = \"copyfile\"\n");
     }
     make_executable(&proot);
     #[cfg(unix)]
