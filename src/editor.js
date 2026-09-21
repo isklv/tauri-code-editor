@@ -71,6 +71,12 @@ export function createEditor(container) {
     tabSize: 2,
     wordWrap: 'on',
     renderWhitespace: 'selection',
+    // Monaco sizes the suggest/hover widgets against the whole page but renders
+    // them inside `.editor`, which clips its overflow. On a phone the editor box
+    // is only a few lines tall once the keyboard is up, so the widget gets sized
+    // for the page and then clipped away to nothing. Positioning the overflow
+    // widgets fixed lets them escape that box.
+    fixedOverflowWidgets: true,
     smoothScrolling: true,
     mouseWheelZoom: true,
     padding: { top: 8 },
