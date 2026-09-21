@@ -479,6 +479,42 @@ fn run_install(app: &AppHandle, branch: Option<&str>) -> Result<Option<String>, 
     Ok(warning)
 }
 
+/// Shell snippet sourced by every login shell in the guest.
+///
+/// `rootfs` is the environment's path *on the host*. It is also reachable under
+/// that same path from inside the guest, because `/data` (Android) or `/home`
+/// is bound straight through -- which is what makes the `GOROOT` workaround
+/// below possible.
+fn env_script_contents(rootfs: &Path) -> String {
+    // The path lands inside a double-quoted shell string.
+    let quoted = rootfs
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`");
+
+    format!(
+        r#"export PATH="/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH"
+export BUN_INSTALL="/root/.bun"
+export TMPDIR="/tmp"
+export GOTMPDIR="/tmp"
+
+# Go looks its own tools up with exec.LookPath, which probes them using
+# faccessat2(2) -- a syscall PRoot has no table entry for on arm64, so the guest
+# path is handed to the host kernel untranslated and comes back ENOENT. `go
+# build` then reports its own compiler as missing while `go tool compile` works,
+# because that path execs the tool without the probe. The rootfs is visible from
+# the host at the path below too, so pointing GOROOT there makes the
+# untranslated probe land on the very file it meant to check.
+GEKO_ROOTFS="{quoted}"
+if [ -z "$GOROOT" ] && [ -x "$GEKO_ROOTFS/usr/lib/go/bin/go" ]; then
+  export GOROOT="$GEKO_ROOTFS/usr/lib/go"
+fi
+"#
+    )
+}
+
 fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), String> {
     let etc_dir = rootfs_path.join("etc");
     fs::create_dir_all(&etc_dir)
@@ -538,16 +574,11 @@ fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), Stri
     let profile_d = etc_dir.join("profile.d");
     let _ = fs::create_dir_all(&profile_d);
     let env_script = profile_d.join("00-geko-env.sh");
-    let _ = fs::write(
-        &env_script,
-        "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\nexport TMPDIR=\"/tmp\"\nexport GOTMPDIR=\"/tmp\"\n",
-    );
+    let script = env_script_contents(rootfs_path);
+    let _ = fs::write(&env_script, &script);
     let root_profile = rootfs_path.join("root").join(".profile");
     if !root_profile.exists() {
-        let _ = fs::write(
-            &root_profile,
-            "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\nexport TMPDIR=\"/tmp\"\nexport GOTMPDIR=\"/tmp\"\n",
-        );
+        let _ = fs::write(&root_profile, &script);
     }
     #[cfg(unix)]
     {
@@ -811,23 +842,17 @@ pub fn ready_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     if !bunfig.exists() {
         let _ = fs::write(bunfig, "[install]\nbackend = \"copyfile\"\n");
     }
-    // Ensure environment script exists in /etc/profile.d/
+    // Rewrite the environment script on every launch rather than only when it is
+    // missing: environments installed by an older build carry a stale copy, and
+    // the GOROOT line in it depends on where the rootfs currently lives.
+    let script = env_script_contents(&rootfs);
     let profile_d = rootfs.join("etc").join("profile.d");
     if profile_d.exists() {
-        let env_script = profile_d.join("00-geko-env.sh");
-        if !env_script.exists() {
-            let _ = fs::write(
-                &env_script,
-                "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
-            );
-        }
+        let _ = fs::write(profile_d.join("00-geko-env.sh"), &script);
     }
     let root_profile = rootfs.join("root").join(".profile");
     if !root_profile.exists() {
-        let _ = fs::write(
-            &root_profile,
-            "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
-        );
+        let _ = fs::write(&root_profile, &script);
     }
     make_executable(&proot);
     #[cfg(unix)]

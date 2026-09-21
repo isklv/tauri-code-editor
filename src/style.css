@@ -934,6 +934,16 @@ button.statusbar-item:hover {
 
 /* ── Monaco Suggest Widget & Autocomplete Colors ── */
 
+/* With `fixedOverflowWidgets` Monaco parks the suggest, hover and parameter-hint
+   widgets in these containers and positions them fixed, which takes them out of
+   the editor's clipped box -- and out of its stacking context with it. Lift them
+   over the activity bar (45) and the mobile nav (55), but keep them under the
+   context menu (200) and the dialog backdrop (400). */
+.monaco-editor .overflowingContentWidgets,
+.monaco-editor .overflowingOverlayWidgets {
+  z-index: 100;
+}
+
 .monaco-editor .suggest-widget {
   font-family: var(--ui-font) !important;
   color: var(--vscode-editorSuggestWidget-foreground) !important;
