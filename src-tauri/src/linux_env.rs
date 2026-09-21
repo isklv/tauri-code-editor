@@ -486,7 +486,9 @@ fn configure_rootfs(rootfs_path: &Path) -> Result<(), String> {
             }
         }
     }
-    resolv_conf.push_str("nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1\nnameserver 8.8.4.4\n");
+    resolv_conf.push_str(
+        "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1\nnameserver 8.8.4.4\n",
+    );
     fs::write(etc_dir.join("resolv.conf"), resolv_conf)
         .map_err(|e| format!("cannot write resolv.conf: {e}"))?;
     let _ = fs::write(

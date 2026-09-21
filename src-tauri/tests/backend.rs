@@ -386,7 +386,10 @@ fn normalize_path_resolves_parent_and_current_segments_lexically() {
     assert_eq!(normalize_path(p), Path::new("/storage/emulated/0/Download"));
 
     let p2 = Path::new("/storage/emulated/0/./Documents/Projects");
-    assert_eq!(normalize_path(p2), Path::new("/storage/emulated/0/Documents/Projects"));
+    assert_eq!(
+        normalize_path(p2),
+        Path::new("/storage/emulated/0/Documents/Projects")
+    );
 }
 
 #[test]
@@ -399,9 +402,18 @@ fn ensure_starter_project_creates_readme_and_removes_legacy_files() {
 
     ensure_starter_project(&dir);
 
-    assert!(!dir.join("index.html").exists(), "legacy index.html should be removed");
-    assert!(!dir.join("style.css").exists(), "legacy style.css should be removed");
-    assert!(!dir.join("main.js").exists(), "legacy main.js should be removed");
+    assert!(
+        !dir.join("index.html").exists(),
+        "legacy index.html should be removed"
+    );
+    assert!(
+        !dir.join("style.css").exists(),
+        "legacy style.css should be removed"
+    );
+    assert!(
+        !dir.join("main.js").exists(),
+        "legacy main.js should be removed"
+    );
 
     let readme = dir.join("README.md");
     assert!(readme.exists(), "README.md should exist");
@@ -410,4 +422,3 @@ fn ensure_starter_project_creates_readme_and_removes_legacy_files() {
     assert!(content.contains("Changelog"));
     assert!(content.contains("v0.1.0"));
 }
-

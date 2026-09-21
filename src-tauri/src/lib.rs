@@ -166,7 +166,9 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
         if !found_workspace {
             let app_data = p.app_data_dir().unwrap_or_default();
             let fallback_candidates = [
-                PathBuf::from("/storage/emulated/0/Android/data/dev.codeeditor.ide/files/geko.workspace"),
+                PathBuf::from(
+                    "/storage/emulated/0/Android/data/dev.codeeditor.ide/files/geko.workspace",
+                ),
                 app_data.join("files").join("geko.workspace"),
                 app_data.join("geko.workspace"),
             ];
@@ -183,8 +185,14 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
         }
 
         r.push(("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))));
-        r.push(("Documents", Ok(PathBuf::from("/storage/emulated/0/Documents"))));
-        r.push(("Downloads", Ok(PathBuf::from("/storage/emulated/0/Download"))));
+        r.push((
+            "Documents",
+            Ok(PathBuf::from("/storage/emulated/0/Documents")),
+        ));
+        r.push((
+            "Downloads",
+            Ok(PathBuf::from("/storage/emulated/0/Download")),
+        ));
         r
     };
     #[cfg(not(target_os = "android"))]
@@ -192,7 +200,8 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
         let mut r = Vec::new();
         if let Ok(home_dir) = p.home_dir() {
             let home_workspace = home_dir.join("geko.workspace");
-            if fs::create_dir_all(&home_workspace).is_ok() && fs::read_dir(&home_workspace).is_ok() {
+            if fs::create_dir_all(&home_workspace).is_ok() && fs::read_dir(&home_workspace).is_ok()
+            {
                 ensure_starter_project(&home_workspace);
                 r.push(("Workspace", Ok(home_workspace)));
             }
