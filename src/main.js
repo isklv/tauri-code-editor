@@ -1419,11 +1419,16 @@ function isTerminalFocused() {
 }
 
 function maxPanelHeight() {
-  const main = document.querySelector('.main').getBoundingClientRect().height;
-  const chrome = ($('topbar')?.offsetHeight || 38) + ($('tabbar')?.offsetHeight || 35) + ($('resizer-panel')?.offsetHeight || 4);
+  const main = document.querySelector('.main');
+  if (!main) return 220;
+  const mainHeight = main.getBoundingClientRect().height;
+  const topbar = $('topbar')?.offsetHeight || 0;
+  const tabbar = $('tabbar')?.offsetHeight || 0;
+  const breadcrumbs = $('breadcrumbs')?.style.display !== 'none' ? ($('breadcrumbs')?.offsetHeight || 0) : 0;
+  const resizer = $('resizer-panel')?.offsetHeight || 4;
   const isKeyboardOpen = document.body.classList.contains('keyboard-open');
-  const MIN_EDITOR = (isKeyboardOpen && isNarrow() && isTerminalFocused()) ? 0 : 100;
-  return Math.max(60, main - chrome - MIN_EDITOR);
+  const MIN_EDITOR = (isKeyboardOpen && isNarrow() && isTerminalFocused()) ? 0 : 80;
+  return Math.max(60, mainHeight - topbar - tabbar - breadcrumbs - resizer - MIN_EDITOR);
 }
 
 function clampLayout() {
@@ -1481,8 +1486,12 @@ function initViewportKeyboardHandling() {
 
     if (!panel.classList.contains('hidden')) {
       if (isKeyboardOpen && isNarrow() && isTerminalFocused()) {
-        const topbarHeight = $('topbar')?.offsetHeight || 42;
-        const available = Math.max(120, vv.height - topbarHeight);
+        const topbarHeight = $('topbar')?.offsetHeight || 0;
+        const tabbarHeight = $('tabbar')?.offsetHeight || 0;
+        const breadcrumbsHeight = $('breadcrumbs')?.style.display !== 'none' ? ($('breadcrumbs')?.offsetHeight || 0) : 0;
+        const resizerHeight = $('resizer-panel')?.offsetHeight || 4;
+        const chrome = topbarHeight + tabbarHeight + breadcrumbsHeight + resizerHeight;
+        const available = Math.max(120, vv.height - chrome);
         panel.style.height = `${available}px`;
       } else if (!isKeyboardOpen && isNarrow()) {
         panel.style.height = '42vh';

@@ -748,7 +748,7 @@ body:not(.sidebar-open) .resizer-v {
 .terminal-host {
   flex: 1;
   min-height: 0;
-  padding: 4px 0 4px 6px;
+  padding: 4px 6px 12px 6px;
   overflow: hidden;
 }
 
@@ -1081,7 +1081,7 @@ button.tool.primary:hover {
 .term-keys {
   display: none;
   gap: 5px;
-  padding: 5px 8px;
+  padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px)) 8px;
   background: #141414;
   border-top: 1px solid var(--border);
   overflow-x: auto;
