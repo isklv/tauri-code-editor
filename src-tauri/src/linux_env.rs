@@ -540,13 +540,13 @@ fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), Stri
     let env_script = profile_d.join("00-geko-env.sh");
     let _ = fs::write(
         &env_script,
-        "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
+        "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\nexport TMPDIR=\"/tmp\"\nexport GOTMPDIR=\"/tmp\"\n",
     );
     let root_profile = rootfs_path.join("root").join(".profile");
     if !root_profile.exists() {
         let _ = fs::write(
             &root_profile,
-            "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
+            "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\nexport TMPDIR=\"/tmp\"\nexport GOTMPDIR=\"/tmp\"\n",
         );
     }
     #[cfg(unix)]
@@ -692,6 +692,12 @@ fn fix_rootfs_permissions(rootfs: &Path) {
             }
         }
     }
+    // Ensure rootfs tmp, var/tmp, and dev/shm exist and are world-writable with sticky bit (mode 1777)
+    for dir_name in ["tmp", "var/tmp", "dev/shm"] {
+        let dir = rootfs.join(dir_name);
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o1777));
+    }
 }
 
 pub fn remove_env(app: &AppHandle) -> Result<(), String> {
@@ -739,7 +745,9 @@ pub fn proot_args(rootfs: &Path, cwd: Option<&str>) -> Vec<String> {
     bind("/proc/self/fd/2", Some("/dev/stderr"));
 
     // Host storage, so project files are reachable from inside the environment.
-    for dir in ["/storage", "/sdcard", "/data", "/home", "/tmp"] {
+    // Note: Do NOT bind host /tmp here; guest Alpine must use its own rootfs /tmp
+    // so that compilers (go, gcc, etc.) have full write permissions without host/SELinux interference.
+    for dir in ["/storage", "/sdcard", "/data", "/home"] {
         bind(dir, None);
     }
     let mut target_dir = "/root".to_string();
