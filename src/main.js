@@ -143,8 +143,10 @@ document.getElementById('app').innerHTML = `
           <select class="panel-select" id="select-shell" style="display:none" title="Choose shell environment">
             <option value="alpine">🐧 Alpine Linux (apk)</option>
             <option value="native">📱 Native Shell</option>
+            <option value="settings">⚙ Alpine Settings…</option>
             <option value="reinstall">🔄 Reinstall Linux</option>
           </select>
+          <button class="icon-button" id="btn-alpine-settings" title="Alpine Linux version & settings" style="display:none">⚙</button>
           <span class="spacer"></span>
           <button class="icon-button" id="btn-linux-log" title="Show Linux setup log">🧾</button>
           <button class="icon-button" id="btn-term-keys" title="Toggle on-screen keys">⌨</button>
@@ -961,6 +963,7 @@ async function linuxEnvReady() {
 async function updateLinuxEnvUI() {
   const btnInstall = $('btn-install-linux');
   const selectShell = $('select-shell');
+  const btnSettings = $('btn-alpine-settings');
   const progressBox = $('linux-progress');
   const topbarBadge = $('topbar-linux-badge');
   const topbarText = $('topbar-linux-text');
@@ -971,6 +974,7 @@ async function updateLinuxEnvUI() {
     if (status.is_installing) {
       btnInstall.style.display = 'none';
       selectShell.style.display = 'none';
+      if (btnSettings) btnSettings.style.display = 'none';
       progressBox.style.display = 'flex';
       if (topbarBadge) {
         topbarBadge.style.display = 'inline-flex';
@@ -982,30 +986,41 @@ async function updateLinuxEnvUI() {
       btnInstall.style.display = 'none';
       selectShell.style.display = 'inline-block';
       selectShell.value = currentShellMode === 'native' ? 'native' : 'alpine';
+      if (btnSettings) btnSettings.style.display = 'inline-flex';
       progressBox.style.display = 'none';
+
+      const config = await api.getAlpineConfig().catch(() => null);
+      const branchName = config?.current_branch || 'v3.22';
+      if (btnSettings) {
+        btnSettings.title = `Alpine settings (current branch: ${branchName})`;
+      }
       if (topbarBadge) {
         topbarBadge.style.display = 'inline-flex';
         topbarBadge.className = 'topbar-linux-badge installed';
-        if (topbarText) topbarText.textContent = 'Alpine';
+        if (topbarText) topbarText.textContent = `Alpine ${branchName}`;
+        topbarBadge.title = `Alpine Linux (${branchName})\nClick to change version / settings`;
       }
     } else {
       btnInstall.style.display = 'inline-flex';
       btnInstall.textContent = '🐧 Install Linux';
       selectShell.style.display = 'none';
+      if (btnSettings) btnSettings.style.display = 'none';
       progressBox.style.display = 'none';
       if (topbarBadge) {
         topbarBadge.style.display = 'inline-flex';
         topbarBadge.className = 'topbar-linux-badge not-installed';
         if (topbarText) topbarText.textContent = 'Install Linux';
+        topbarBadge.title = 'Click to set up Alpine Linux';
       }
     }
   } catch {
     btnInstall.style.display = 'none';
     selectShell.style.display = 'none';
+    if (btnSettings) btnSettings.style.display = 'none';
   }
 }
 
-async function triggerInstallLinux({ openTerminal = true } = {}) {
+async function triggerInstallLinux({ openTerminal = true, branch = null } = {}) {
   openTerminalAfterInstall = openTerminal;
   showLinuxLog(openTerminal);
   const progressBox = $('linux-progress');
@@ -1019,7 +1034,7 @@ async function triggerInstallLinux({ openTerminal = true } = {}) {
   progressBar.style.width = '10%';
 
   try {
-    await api.installLinuxEnv();
+    await api.installLinuxEnv(branch);
   } catch (e) {
     setStatus(`Installation failed: ${e}`, true);
     await updateLinuxEnvUI();
@@ -1053,7 +1068,7 @@ $('topbar-linux-badge')?.addEventListener('click', async () => {
   try {
     const status = await api.getLinuxEnvStatus();
     if (status.is_installed) {
-      toggleTerminal(false);
+      openAlpineSettingsModal();
     } else if (!status.is_installing) {
       triggerInstallLinux();
     }
@@ -1062,7 +1077,14 @@ $('topbar-linux-badge')?.addEventListener('click', async () => {
   }
 });
 
+$('btn-alpine-settings')?.addEventListener('click', () => openAlpineSettingsModal());
+
 $('select-shell')?.addEventListener('change', async (e) => {
+  if (e.target.value === 'settings') {
+    e.target.value = currentShellMode === 'native' ? 'native' : 'alpine';
+    openAlpineSettingsModal();
+    return;
+  }
   if (e.target.value === 'reinstall') {
     e.target.value = currentShellMode === 'native' ? 'native' : 'alpine';
     await reinstallLinuxEnv();
@@ -1086,7 +1108,7 @@ async function startShell(mode) {
 }
 
 /** Wipe and rebuild the environment — the fix when apk or the shell misbehaves. */
-async function reinstallLinuxEnv() {
+async function reinstallLinuxEnv(branch = null) {
   try {
     // Detach from the rootfs before deleting it, but keep Alpine as the wanted
     // shell so the terminal returns to it once the new install lands.
@@ -1094,11 +1116,148 @@ async function reinstallLinuxEnv() {
     await terminal.restart(rootPath, 'native');
     await api.removeLinuxEnv();
     await updateLinuxEnvUI();
-    await triggerInstallLinux();
+    await triggerInstallLinux({ branch });
   } catch (err) {
     setStatus(`Reinstall failed: ${err}`, true);
     await updateLinuxEnvUI();
   }
+}
+
+/** Modal dialog for switching Alpine Linux version / branch. */
+async function openAlpineSettingsModal() {
+  const existing = document.getElementById('alpine-settings-modal');
+  if (existing) existing.remove();
+
+  let config;
+  try {
+    config = await api.getAlpineConfig();
+  } catch (err) {
+    config = { current_branch: 'v3.22', edge_enabled: false, available_branches: ['v3.22', 'v3.23', 'edge'] };
+  }
+
+  const branches = [
+    { id: 'v3.22', name: 'v3.22 (Стабильная)', desc: 'Go 1.24, Python 3.12, Node 22' },
+    { id: 'v3.23', name: 'v3.23 (Стабильная)', desc: 'Go 1.25, свежие библиотеки' },
+    { id: 'edge', name: 'edge (Rolling / Новейшая)', desc: 'Go 1.27+, новейшие пакеты' },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'alpine-settings-modal';
+  overlay.className = 'modal-overlay';
+
+  overlay.innerHTML = `
+    <div class="modal-box alpine-modal">
+      <div class="modal-header">
+        <div class="modal-title">🐧 Окружение Alpine Linux</div>
+        <button class="icon-button" id="btn-close-alpine-modal" title="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="alpine-status-bar">
+          <span class="alpine-status-label">Текущая ветка:</span>
+          <span class="alpine-branch-pill">${config.current_branch}</span>
+          ${config.edge_enabled ? '<span class="alpine-edge-pill">+ @edge</span>' : ''}
+        </div>
+
+        <div class="alpine-section-title">Ветка пакетов Alpine:</div>
+        <div class="alpine-branch-list">
+          ${branches
+            .map(
+              (b) => `
+            <label class="alpine-branch-option ${b.id === config.current_branch ? 'selected' : ''}">
+              <input type="radio" name="alpine-branch" value="${b.id}" ${b.id === config.current_branch ? 'checked' : ''} />
+              <div class="alpine-branch-info">
+                <div class="alpine-branch-name">${b.name}</div>
+                <div class="alpine-branch-desc">${b.desc}</div>
+              </div>
+            </label>
+          `
+            )
+            .join('')}
+        </div>
+
+        <div class="alpine-options">
+          <label class="alpine-checkbox-option" id="label-enable-edge">
+            <input type="checkbox" id="chk-enable-edge" ${config.edge_enabled || config.current_branch !== 'edge' ? 'checked' : ''} />
+            <span>Подключить <code>@edge</code> параллельно (установка через <code>apk add pkg@edge</code>)</span>
+          </label>
+          <label class="alpine-checkbox-option">
+            <input type="checkbox" id="chk-run-upgrade" />
+            <span>Обновить все установленные пакеты до выбранной ветки (<code>apk upgrade</code>)</span>
+          </label>
+        </div>
+
+        <div class="alpine-modal-footer">
+          <button class="btn-danger" id="btn-alpine-reinstall" title="Переустановить Alpine с нуля">С нуля 🔄</button>
+          <div class="spacer"></div>
+          <button class="btn-secondary" id="btn-alpine-cancel">Отмена</button>
+          <button class="btn-primary" id="btn-alpine-apply">Применить ветку</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const closeModal = () => overlay.remove();
+
+  overlay.querySelector('#btn-close-alpine-modal')?.addEventListener('click', closeModal);
+  overlay.querySelector('#btn-alpine-cancel')?.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  const branchRadios = overlay.querySelectorAll('input[name="alpine-branch"]');
+  const chkEdge = overlay.querySelector('#chk-enable-edge');
+  const labelEdge = overlay.querySelector('#label-enable-edge');
+
+  const updateEdgeVisibility = (selected) => {
+    if (selected === 'edge') {
+      chkEdge.disabled = true;
+      labelEdge.style.opacity = '0.5';
+    } else {
+      chkEdge.disabled = false;
+      labelEdge.style.opacity = '1';
+    }
+  };
+
+  branchRadios.forEach((r) => {
+    r.addEventListener('change', (e) => {
+      overlay.querySelectorAll('.alpine-branch-option').forEach((el) => el.classList.remove('selected'));
+      r.closest('.alpine-branch-option')?.classList.add('selected');
+      updateEdgeVisibility(e.target.value);
+    });
+  });
+
+  updateEdgeVisibility(config.current_branch);
+
+  overlay.querySelector('#btn-alpine-apply')?.addEventListener('click', async () => {
+    const selectedBranch = overlay.querySelector('input[name="alpine-branch"]:checked')?.value || 'v3.22';
+    const enableEdge = chkEdge.checked;
+    const runUpgrade = overlay.querySelector('#chk-run-upgrade')?.checked || false;
+
+    closeModal();
+    setStatus(`Переключение Alpine на ${selectedBranch}...`);
+    toggleTerminal(false);
+    showLinuxLog(true);
+
+    try {
+      await api.setAlpineBranch({ branch: selectedBranch, enableEdge, runUpgrade });
+      await updateLinuxEnvUI();
+    } catch (e) {
+      setStatus(`Ошибка переключения: ${e}`, true);
+    }
+  });
+
+  overlay.querySelector('#btn-alpine-reinstall')?.addEventListener('click', async () => {
+    const selectedBranch = overlay.querySelector('input[name="alpine-branch"]:checked')?.value || 'v3.22';
+    const confirmed = await askConfirm(
+      `Переустановить Alpine Linux на ветку ${selectedBranch}? Все пакеты и файлы внутри rootfs будут пересозданы.`,
+      'Переустановить'
+    );
+    if (!confirmed) return;
+    closeModal();
+    await reinstallLinuxEnv(selectedBranch);
+  });
 }
 
 api.onLinuxEnvLog((payload) => appendLinuxLog(payload.message));

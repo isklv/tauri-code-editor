@@ -181,9 +181,25 @@ export async function getLinuxEnvStatus() {
   return invoke('get_linux_env_status');
 }
 
-export async function installLinuxEnv() {
+export async function installLinuxEnv(branch = null) {
   if (!isTauri) throw new Error('Linux environment requires the desktop or mobile app');
-  return invoke('install_linux_env');
+  return invoke('install_linux_env', { branch });
+}
+
+export async function getAlpineConfig() {
+  if (!isTauri) {
+    return {
+      current_branch: 'v3.22',
+      edge_enabled: false,
+      available_branches: ['v3.22', 'v3.23', 'edge'],
+    };
+  }
+  return invoke('get_alpine_config');
+}
+
+export async function setAlpineBranch({ branch, enableEdge = true, runUpgrade = false }) {
+  if (!isTauri) return;
+  return invoke('set_alpine_branch', { branch, enableEdge, runUpgrade });
 }
 
 export async function removeLinuxEnv() {

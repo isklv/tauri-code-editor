@@ -764,8 +764,24 @@ fn get_linux_env_status(
 fn install_linux_env(
     app: AppHandle,
     state: State<'_, Arc<linux_env::InstallState>>,
+    branch: Option<String>,
 ) -> Result<(), String> {
-    linux_env::start_install(app, state.inner().clone())
+    linux_env::start_install(app, state.inner().clone(), branch)
+}
+
+#[tauri::command]
+fn get_alpine_config(app: AppHandle) -> Result<linux_env::AlpineConfig, String> {
+    linux_env::get_alpine_config(&app)
+}
+
+#[tauri::command]
+fn set_alpine_branch(
+    app: AppHandle,
+    branch: String,
+    enable_edge: bool,
+    run_upgrade: bool,
+) -> Result<(), String> {
+    linux_env::set_alpine_branch(&app, branch, enable_edge, run_upgrade)
 }
 
 #[tauri::command]
@@ -926,6 +942,8 @@ pub fn run() {
             pty_kill,
             get_linux_env_status,
             install_linux_env,
+            get_alpine_config,
+            set_alpine_branch,
             remove_linux_env,
             git_status,
             git_stage,
@@ -954,7 +972,7 @@ pub fn run() {
                     .state::<Arc<linux_env::InstallState>>()
                     .inner()
                     .clone();
-                if let Err(e) = linux_env::start_install(handle, state) {
+                if let Err(e) = linux_env::start_install(handle, state, None) {
                     eprintln!("Linux environment setup did not start: {e}");
                 }
             }

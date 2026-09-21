@@ -32,6 +32,13 @@ pub struct LinuxEnvStatus {
     pub env_dir: Option<String>,
 }
 
+#[derive(Serialize, serde::Deserialize, Clone, Debug)]
+pub struct AlpineConfig {
+    pub current_branch: String,
+    pub edge_enabled: bool,
+    pub available_branches: Vec<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct ProgressPayload {
     pub step: String,
@@ -170,7 +177,11 @@ pub fn get_status(app: &AppHandle, state: &InstallState) -> LinuxEnvStatus {
     }
 }
 
-pub fn start_install(app: AppHandle, state: Arc<InstallState>) -> Result<(), String> {
+pub fn start_install(
+    app: AppHandle,
+    state: Arc<InstallState>,
+    branch: Option<String>,
+) -> Result<(), String> {
     let mut guard = state.is_installing.lock().unwrap();
     if *guard {
         return Err("installation already in progress".to_string());
@@ -182,7 +193,7 @@ pub fn start_install(app: AppHandle, state: Arc<InstallState>) -> Result<(), Str
     let thread_state = state.clone();
 
     std::thread::spawn(move || {
-        let result = run_install(&app);
+        let result = run_install(&app, branch.as_deref());
         *thread_state.is_installing.lock().unwrap() = false;
 
         match result {
@@ -355,7 +366,7 @@ fn verify_gzip(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("downloaded rootfs archive is not readable: {e}"))
 }
 
-fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
+fn run_install(app: &AppHandle, branch: Option<&str>) -> Result<Option<String>, String> {
     let arch = target_arch();
     let env_path = env_dir(app)?;
     let bin_path = env_path.join("bin");
@@ -432,7 +443,7 @@ fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
         "Configuring network and package mirrors...",
         70,
     );
-    configure_rootfs(&rootfs_path)?;
+    configure_rootfs(&rootfs_path, branch)?;
     emit_log(
         app,
         "wrote resolv.conf, apk repositories and the welcome banner",
@@ -468,7 +479,7 @@ fn run_install(app: &AppHandle) -> Result<Option<String>, String> {
     Ok(warning)
 }
 
-fn configure_rootfs(rootfs_path: &Path) -> Result<(), String> {
+fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), String> {
     let etc_dir = rootfs_path.join("etc");
     fs::create_dir_all(&etc_dir)
         .map_err(|e| format!("cannot create {}: {e}", etc_dir.display()))?;
@@ -500,16 +511,19 @@ fn configure_rootfs(rootfs_path: &Path) -> Result<(), String> {
     let apk_dir = etc_dir.join("apk");
     fs::create_dir_all(&apk_dir)
         .map_err(|e| format!("cannot create {}: {e}", apk_dir.display()))?;
-    fs::write(
-        apk_dir.join("repositories"),
-        format!(
-            "https://dl-cdn.alpinelinux.org/alpine/{ALPINE_BRANCH}/main\n\
-             https://dl-cdn.alpinelinux.org/alpine/{ALPINE_BRANCH}/community\n\
-             # https://dl-cdn.alpinelinux.org/alpine/edge/main\n\
-             # https://dl-cdn.alpinelinux.org/alpine/edge/community\n"
-        ),
-    )
-    .map_err(|e| format!("cannot write apk repositories: {e}"))?;
+    let selected_branch = branch.unwrap_or(ALPINE_BRANCH);
+    let mut repo_content = format!(
+        "https://dl-cdn.alpinelinux.org/alpine/{selected_branch}/main\n\
+         https://dl-cdn.alpinelinux.org/alpine/{selected_branch}/community\n"
+    );
+    if selected_branch != "edge" {
+        repo_content.push_str(
+            "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main\n\
+             @edge https://dl-cdn.alpinelinux.org/alpine/edge/community\n"
+        );
+    }
+    fs::write(apk_dir.join("repositories"), repo_content)
+        .map_err(|e| format!("cannot write apk repositories: {e}"))?;
 
     // Directories apk and ordinary tools expect to be writable.
     for dir in ["tmp", "var/tmp", "var/cache/apk", "root", "dev/shm", "run"] {
@@ -795,4 +809,125 @@ pub fn build_proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command
     cmd.args(["/bin/sh", "-l"]);
 
     Some(cmd)
+}
+
+pub fn get_alpine_config(app: &AppHandle) -> Result<AlpineConfig, String> {
+    let available = vec!["v3.22".to_string(), "v3.23".to_string(), "edge".to_string()];
+    let rootfs = match rootfs_dir(app) {
+        Ok(dir) => dir,
+        Err(_) => {
+            return Ok(AlpineConfig {
+                current_branch: ALPINE_BRANCH.to_string(),
+                edge_enabled: false,
+                available_branches: available,
+            });
+        }
+    };
+
+    let repos_file = rootfs.join("etc").join("apk").join("repositories");
+    if !repos_file.exists() {
+        return Ok(AlpineConfig {
+            current_branch: ALPINE_BRANCH.to_string(),
+            edge_enabled: false,
+            available_branches: available,
+        });
+    }
+
+    let content = fs::read_to_string(&repos_file).map_err(|e| format!("cannot read repositories: {e}"))?;
+    let mut current_branch = ALPINE_BRANCH.to_string();
+    let mut edge_enabled = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("@edge") {
+            edge_enabled = true;
+            continue;
+        }
+        if trimmed.contains("/alpine/edge/") {
+            current_branch = "edge".to_string();
+        } else if let Some(idx) = trimmed.find("/alpine/v") {
+            let after = &trimmed[idx + "/alpine/".len()..];
+            if let Some(slash_idx) = after.find('/') {
+                current_branch = after[..slash_idx].to_string();
+            }
+        }
+    }
+
+    Ok(AlpineConfig {
+        current_branch,
+        edge_enabled,
+        available_branches: available,
+    })
+}
+
+pub fn set_alpine_branch(
+    app: &AppHandle,
+    branch: String,
+    enable_edge: bool,
+    run_upgrade: bool,
+) -> Result<(), String> {
+    let rootfs = rootfs_dir(app)?;
+    if !is_installed(app) {
+        return Err("Alpine Linux environment is not installed".to_string());
+    }
+
+    let etc_dir = rootfs.join("etc");
+    let apk_dir = etc_dir.join("apk");
+    fs::create_dir_all(&apk_dir)
+        .map_err(|e| format!("cannot create apk directory: {e}"))?;
+
+    let mut repo_content = format!(
+        "https://dl-cdn.alpinelinux.org/alpine/{branch}/main\n\
+         https://dl-cdn.alpinelinux.org/alpine/{branch}/community\n"
+    );
+    if enable_edge && branch != "edge" {
+        repo_content.push_str(
+            "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main\n\
+             @edge https://dl-cdn.alpinelinux.org/alpine/edge/community\n"
+        );
+    }
+    fs::write(apk_dir.join("repositories"), repo_content)
+        .map_err(|e| format!("cannot write apk repositories: {e}"))?;
+
+    let app_clone = app.clone();
+    let branch_clone = branch.clone();
+    std::thread::spawn(move || {
+        emit_log(&app_clone, format!("Switching Alpine branch to {branch_clone}..."));
+        let cmd_str = if run_upgrade {
+            "apk update && apk upgrade --no-cache"
+        } else {
+            "apk update"
+        };
+        emit_log(&app_clone, format!("$ {cmd_str}"));
+        if let Some(mut cmd) = proot_command(&app_clone, None) {
+            cmd.args(["/bin/sh", "-lc", cmd_str]);
+            cmd.stdout(std::process::Stdio::piped());
+            cmd.stderr(std::process::Stdio::piped());
+            if let Ok(mut child) = cmd.spawn() {
+                let tail = Arc::new(Mutex::new(Vec::<String>::new()));
+                let r1 = child.stdout.take().map(pipe_to_log(&app_clone, &tail));
+                let r2 = child.stderr.take().map(pipe_to_log(&app_clone, &tail));
+                if let Some(r) = r1 {
+                    let _ = r.join();
+                }
+                if let Some(r) = r2 {
+                    let _ = r.join();
+                }
+                let _ = child.wait();
+            }
+        }
+        emit_log(&app_clone, format!("Alpine branch switched to {branch_clone} successfully!"));
+        let _ = app_clone.emit(
+            "linux-env://complete",
+            CompletePayload {
+                message: format!("Alpine switched to {branch_clone}!"),
+                warning: false,
+            },
+        );
+    });
+
+    Ok(())
 }
