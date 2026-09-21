@@ -1,7 +1,7 @@
 import './style.css';
 
 import * as api from './api.js';
-import { askConfirm, askFolder, askText, showInfo } from './dialog.js';
+import { askConfirm, askFolder, askLinkAction, askText, showInfo } from './dialog.js';
 import { showMenu } from './contextmenu.js';
 import { openPalette } from './palette.js';
 import { createDiffEditor, createEditor, createModel, fixAndroidComposition, monaco, setupCompletions } from './editor.js';
@@ -10,6 +10,7 @@ import { TerminalPanel } from './terminal.js';
 import { GitPanel } from './gitpanel.js';
 import { getFileIconHtml, SVG_ICONS } from './icons.js';
 import { setupLsp } from './lsp.js';
+import { renderMarkdown } from './markdown.js';
 
 // ── Layout ──
 
@@ -105,6 +106,9 @@ document.getElementById('app').innerHTML = `
         </div>
 
         <div class="topbar-right">
+          <button class="icon-button topbar-btn" id="btn-md-preview" title="Markdown Preview (Ctrl+Shift+V)" style="display:none;">
+            📖
+          </button>
           <button class="icon-button topbar-btn" id="btn-save" title="Save file (Ctrl+S)">
             ${SVG_ICONS.save}
           </button>
@@ -127,12 +131,31 @@ document.getElementById('app').innerHTML = `
 
       <div class="editor-container" id="editor-container">
         <div class="editor" id="editor"></div>
+        <div class="markdown-preview" id="markdown-preview" style="display:none;">
+          <div class="markdown-preview-header">
+            <span class="markdown-preview-title">Markdown Preview</span>
+            <span class="spacer"></span>
+            <button class="icon-button" id="btn-close-md-preview" title="Close Preview">×</button>
+          </div>
+          <div class="markdown-body" id="markdown-body"></div>
+        </div>
         <div class="diff-editor" id="diff-editor" style="display:none;">
           <div class="diff-header">
             <span class="diff-title" id="diff-title">Diff View</span>
             <button class="icon-button" id="btn-close-diff" title="Close Diff View">×</button>
           </div>
           <div class="diff-host" id="diff-host"></div>
+        </div>
+        <div class="web-preview-pane" id="web-preview-pane" style="display:none;">
+          <div class="web-preview-toolbar">
+            <button class="icon-button" id="btn-web-back" title="Back">◀</button>
+            <button class="icon-button" id="btn-web-forward" title="Forward">▶</button>
+            <button class="icon-button" id="btn-web-reload" title="Reload">⟳</button>
+            <input type="text" class="web-preview-url" id="web-preview-url" readonly />
+            <button class="icon-button" id="btn-web-external" title="Open in External Browser">↗</button>
+            <button class="icon-button" id="btn-web-close" title="Close Web Tab">×</button>
+          </div>
+          <iframe class="web-preview-iframe" id="web-preview-iframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
         </div>
       </div>
 
@@ -222,6 +245,124 @@ let rootPath = null;
 let statusTimer = null;
 let currentView = 'explorer';
 
+// ── Preview & External Links State ──
+let isMarkdownPreviewOpen = false;
+let mdPreviewDebounce = null;
+let activeWebUrl = null;
+
+function persistOpenFiles() {
+  try {
+    localStorage.setItem('geko_open_files', JSON.stringify([...openFiles.keys()]));
+    localStorage.setItem('geko_active_file', activePath || '');
+  } catch {}
+}
+
+function isMarkdownFile(path) {
+  return typeof path === 'string' && /\.(md|markdown)$/i.test(path);
+}
+
+function updateMarkdownPreview() {
+  if (!isMarkdownPreviewOpen) return;
+  const entry = activePath ? openFiles.get(activePath) : null;
+  const content = entry ? entry.model.getValue() : '';
+  const body = $('markdown-body');
+  if (body) {
+    body.innerHTML = renderMarkdown(content);
+  }
+}
+
+function scheduleMarkdownPreviewUpdate() {
+  clearTimeout(mdPreviewDebounce);
+  mdPreviewDebounce = setTimeout(updateMarkdownPreview, 100);
+}
+
+function toggleMarkdownPreview(force) {
+  if (force !== undefined) {
+    isMarkdownPreviewOpen = Boolean(force);
+  } else {
+    isMarkdownPreviewOpen = !isMarkdownPreviewOpen;
+  }
+
+  const container = $('editor-container');
+  const preview = $('markdown-preview');
+  const edNode = $('editor');
+
+  if (!isMarkdownPreviewOpen) {
+    container.classList.remove('split-preview');
+    preview.style.display = 'none';
+    edNode.style.display = 'block';
+    editor.layout();
+    return;
+  }
+
+  const isWide = window.innerWidth > 720;
+  if (isWide) {
+    container.classList.add('split-preview');
+    preview.style.display = 'flex';
+    edNode.style.display = 'block';
+  } else {
+    container.classList.remove('split-preview');
+    preview.style.display = 'flex';
+    edNode.style.display = 'none';
+  }
+
+  updateMarkdownPreview();
+  editor.layout();
+}
+
+function openWebPreview(url) {
+  activeWebUrl = url;
+  if (activePath && openFiles.has(activePath)) {
+    openFiles.get(activePath).viewState = editor.saveViewState();
+  }
+  activePath = null;
+  tree.setActive(null);
+
+  $('diff-editor').style.display = 'none';
+  $('markdown-preview').style.display = 'none';
+  $('editor-container').classList.remove('split-preview');
+  $('editor').style.display = 'none';
+  $('web-preview-pane').style.display = 'flex';
+
+  $('web-preview-url').value = url;
+  $('web-preview-iframe').src = url;
+
+  renderTabs();
+  updateStatus();
+}
+
+function closeWebPreview(restoreFile = true) {
+  activeWebUrl = null;
+  $('web-preview-pane').style.display = 'none';
+  $('web-preview-iframe').src = 'about:blank';
+  if (restoreFile) {
+    const next = [...openFiles.keys()].pop();
+    if (next) activate(next);
+    else {
+      editor.setModel(null);
+      $('editor').style.display = 'block';
+    }
+  }
+  renderTabs();
+  updateStatus();
+}
+
+async function handleExternalLink(url) {
+  const action = await askLinkAction(url);
+  if (action === 'tab') {
+    openWebPreview(url);
+  } else if (action === 'external') {
+    await api.openExternalUrl(url);
+  } else if (action === 'copy') {
+    try {
+      await navigator.clipboard.writeText(url);
+      setStatus('Link copied to clipboard');
+    } catch {
+      setStatus(`Link: ${url}`);
+    }
+  }
+}
+
 const editor = createEditor($('editor'));
 const diffEditor = createDiffEditor($('diff-host'));
 for (const target of [editor, diffEditor.getOriginalEditor(), diffEditor.getModifiedEditor()]) {
@@ -293,10 +434,10 @@ function isPrivateAppRoot(path) {
 }
 
 window.addEventListener('focus', async () => {
-  if (!rootPath || isPrivateAppRoot(rootPath) || rootPath.includes('dev.codeeditor.ide')) {
+  if (!rootPath || isPrivateAppRoot(rootPath)) {
     try {
       const def = await api.defaultRoot();
-      if (def && (!rootPath || isPrivateAppRoot(rootPath) || (!rootPath.includes('geko.workspace') && def.includes('geko.workspace')))) {
+      if (def && (!rootPath || isPrivateAppRoot(rootPath))) {
         await openFolder(def);
       }
     } catch {}
@@ -464,7 +605,13 @@ async function openDiff(file) {
 
 function closeDiff() {
   $('diff-editor').style.display = 'none';
-  $('editor').style.display = 'block';
+  if (!activeWebUrl) {
+    if (isMarkdownPreviewOpen) {
+      toggleMarkdownPreview(true);
+    } else {
+      $('editor').style.display = 'block';
+    }
+  }
   if (diffOriginalModel) {
     diffOriginalModel.dispose();
     diffOriginalModel = null;
@@ -594,7 +741,12 @@ async function openFile(path) {
     if (!openFiles.has(path)) {
       const content = await api.readFile(path);
       openFiles.set(path, { model: createModel(content, path), viewState: null, saved: content });
-      openFiles.get(path).model.onDidChangeContent(() => renderTabs());
+      openFiles.get(path).model.onDidChangeContent(() => {
+        renderTabs();
+        if (path === activePath && isMarkdownPreviewOpen && isMarkdownFile(path)) {
+          scheduleMarkdownPreviewUpdate();
+        }
+      });
     }
     activate(path);
   } catch (e) {
@@ -603,6 +755,9 @@ async function openFile(path) {
 }
 
 function activate(path) {
+  if (activeWebUrl) {
+    closeWebPreview(false);
+  }
   if (activePath && openFiles.has(activePath)) {
     openFiles.get(activePath).viewState = editor.saveViewState();
   }
@@ -615,6 +770,18 @@ function activate(path) {
   tree.setActive(path);
   renderTabs();
   updateStatus();
+  persistOpenFiles();
+
+  // Markdown preview support
+  const isMd = isMarkdownFile(path);
+  if ($('btn-md-preview')) {
+    $('btn-md-preview').style.display = isMd ? 'inline-flex' : 'none';
+  }
+  if (isMd && isMarkdownPreviewOpen) {
+    updateMarkdownPreview();
+  } else if (!isMd && isMarkdownPreviewOpen) {
+    toggleMarkdownPreview(false);
+  }
 }
 
 function isDirty(path) {
@@ -650,12 +817,14 @@ async function closeFile(path) {
   const entry = openFiles.get(path);
   entry?.model.dispose();
   openFiles.delete(path);
+  persistOpenFiles();
 
   if (activePath === path) {
     activePath = null;
     const next = [...openFiles.keys()].pop();
     if (next) activate(next);
     else {
+      if (isMarkdownPreviewOpen) toggleMarkdownPreview(false);
       editor.setModel(null);
       tree.setActive(null);
       renderTabs();
@@ -674,7 +843,7 @@ function renderTabs() {
   for (const path of openFiles.keys()) {
     const tab = document.createElement('div');
     tab.className = 'tab';
-    if (path === activePath) tab.classList.add('active');
+    if (path === activePath && !activeWebUrl) tab.classList.add('active');
     if (isDirty(path)) tab.classList.add('dirty');
     tab.title = path;
 
@@ -697,7 +866,41 @@ function renderTabs() {
 
     tab.addEventListener('click', () => {
       closeDiff();
+      if (activeWebUrl) closeWebPreview(false);
       activate(path);
+    });
+    bar.appendChild(tab);
+  }
+
+  if (activeWebUrl) {
+    const tab = document.createElement('div');
+    tab.className = 'tab web-tab active';
+    tab.title = activeWebUrl;
+
+    const icon = document.createElement('span');
+    icon.className = 'tab-icon';
+    icon.textContent = '🌐';
+    tab.appendChild(icon);
+
+    const name = document.createElement('span');
+    try {
+      name.textContent = new URL(activeWebUrl).hostname;
+    } catch {
+      name.textContent = 'Web Preview';
+    }
+    tab.appendChild(name);
+
+    const close = document.createElement('span');
+    close.className = 'close';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeWebPreview(true);
+    });
+    tab.appendChild(close);
+
+    tab.addEventListener('click', () => {
+      closeDiff();
+      openWebPreview(activeWebUrl);
     });
     bar.appendChild(tab);
   }
@@ -1368,6 +1571,8 @@ window.addEventListener('keydown', (e) => {
     w: () => activePath && closeFile(activePath),
     p: () => quickOpen(),
     n: () => rootPath && createEntryUnder(rootPath),
+    v: () => e.shiftKey && isMarkdownFile(activePath) && toggleMarkdownPreview(),
+    V: () => isMarkdownFile(activePath) && toggleMarkdownPreview(),
   };
 
   const handler = handlers[e.key] ?? (inTerminal ? undefined : editorHandlers[e.key]);
@@ -1375,6 +1580,44 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     handler();
   }
+});
+
+// Toolbar buttons for preview & external links
+$('btn-md-preview')?.addEventListener('click', () => toggleMarkdownPreview());
+$('btn-close-md-preview')?.addEventListener('click', () => toggleMarkdownPreview(false));
+
+$('btn-web-back')?.addEventListener('click', () => {
+  $('web-preview-iframe')?.contentWindow?.history?.back();
+});
+$('btn-web-forward')?.addEventListener('click', () => {
+  $('web-preview-iframe')?.contentWindow?.history?.forward();
+});
+$('btn-web-reload')?.addEventListener('click', () => {
+  const f = $('web-preview-iframe');
+  if (f && f.src) f.src = f.src;
+});
+$('btn-web-external')?.addEventListener('click', () => {
+  if (activeWebUrl) api.openExternalUrl(activeWebUrl);
+});
+$('btn-web-close')?.addEventListener('click', () => {
+  closeWebPreview(true);
+});
+
+// Intercept clicks on external links globally (preventing full screen webview navigation)
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+  if (/^https?:\/\//i.test(a.href) || /^mailto:/i.test(a.href)) {
+    e.preventDefault();
+    e.stopPropagation();
+    handleExternalLink(a.href);
+  }
+}, true);
+
+window.addEventListener('geko:open-link', (e) => {
+  if (e.detail?.url) handleExternalLink(e.detail.url);
 });
 
 async function quickOpen() {
@@ -1624,8 +1867,8 @@ async function initAppInfo() {
 async function init() {
   setSidebar(!isNarrow());
   let savedRoot = localStorage.getItem('geko_last_root');
-  if (savedRoot && (isPrivateAppRoot(savedRoot) || savedRoot.includes('dev.codeeditor.ide') || savedRoot.includes('Documents/workspace') || savedRoot.endsWith('/workspace'))) {
-    console.log('Resetting outdated workspace from localStorage:', savedRoot);
+  if (savedRoot && isPrivateAppRoot(savedRoot)) {
+    console.log('Resetting private app root from localStorage:', savedRoot);
     localStorage.removeItem('geko_last_root');
     savedRoot = null;
   }
@@ -1648,7 +1891,26 @@ async function init() {
     }
   }
 
-  // If no file is open, try to open README.md or the first file in the opened directory
+  // Restore previously opened file tabs if any
+  try {
+    const savedFilesStr = localStorage.getItem('geko_open_files');
+    const lastActive = localStorage.getItem('geko_active_file');
+    if (savedFilesStr) {
+      const savedFiles = JSON.parse(savedFilesStr);
+      if (Array.isArray(savedFiles)) {
+        for (const filePath of savedFiles) {
+          await openFile(filePath).catch(() => {});
+        }
+      }
+    }
+    if (lastActive && openFiles.has(lastActive)) {
+      activate(lastActive);
+    }
+  } catch (e) {
+    console.warn('Could not restore open files:', e);
+  }
+
+  // If still no file is open, try to open README.md or the first file in the opened directory
   if (openFiles.size === 0 && rootPath) {
     try {
       const listing = await api.listDir(rootPath);

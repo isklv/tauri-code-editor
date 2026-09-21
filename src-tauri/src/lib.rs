@@ -928,6 +928,42 @@ fn get_app_info() -> AppInfo {
     }
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        let res = std::process::Command::new("/system/bin/am")
+            .args(["start", "-a", "android.intent.action.VIEW", "-d", &url])
+            .status();
+        if let Ok(s) = res {
+            if s.success() {
+                return Ok(());
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let res = std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn();
+        if let Ok(mut child) = res {
+            let _ = child.wait();
+            return Ok(());
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&url).spawn();
+        return Ok(());
+    }
+    Err("Failed to open URL in external application".to_string())
+}
+
 // ── Setup ──
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -940,6 +976,7 @@ pub fn run() {
         .manage(Arc::new(lsp::LspManager::default()))
         .invoke_handler(tauri::generate_handler![
             get_app_info,
+            open_external_url,
             default_root,
             quick_roots,
             list_dir,

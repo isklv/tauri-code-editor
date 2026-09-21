@@ -228,3 +228,67 @@ export function showInfo(title, message) {
     ok.focus();
   });
 }
+
+/**
+ * Prompt user when clicking an external URL: open in tab, open in browser, or copy.
+ * @param {string} url
+ * @returns {Promise<'tab' | 'external' | 'copy' | null>}
+ */
+export function askLinkAction(url) {
+  const backdrop = ensureHost();
+  backdrop.textContent = '';
+  backdrop.hidden = false;
+
+  const box = document.createElement('div');
+  box.className = 'modal';
+
+  const heading = document.createElement('div');
+  heading.className = 'modal-title';
+  heading.textContent = 'Внешняя ссылка';
+  box.appendChild(heading);
+
+  const urlDisplay = document.createElement('div');
+  urlDisplay.className = 'modal-url-display';
+  urlDisplay.textContent = url;
+  box.appendChild(urlDisplay);
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions modal-actions-stacked';
+
+  const btnTab = document.createElement('button');
+  btnTab.className = 'tool primary';
+  btnTab.textContent = '🌐 Открыть во вкладке';
+
+  const btnExternal = document.createElement('button');
+  btnExternal.className = 'tool';
+  btnExternal.textContent = '↗ Открыть в браузере';
+
+  const btnCopy = document.createElement('button');
+  btnCopy.className = 'tool';
+  btnCopy.textContent = '📋 Скопировать ссылку';
+
+  const btnCancel = document.createElement('button');
+  btnCancel.className = 'tool';
+  btnCancel.textContent = 'Отмена';
+
+  actions.append(btnTab, btnExternal, btnCopy, btnCancel);
+  box.appendChild(actions);
+  backdrop.appendChild(box);
+
+  return new Promise((resolve) => {
+    const finish = (val) => {
+      backdrop.hidden = true;
+      backdrop.textContent = '';
+      resolve(val);
+    };
+    btnTab.onclick = () => finish('tab');
+    btnExternal.onclick = () => finish('external');
+    btnCopy.onclick = () => finish('copy');
+    btnCancel.onclick = () => finish(null);
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) finish(null);
+    };
+    btnTab.focus();
+  });
+}
+

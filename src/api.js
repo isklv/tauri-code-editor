@@ -426,5 +426,19 @@ export async function onLspMessage(callback) {
   return listen('lsp://message', (event) => callback(event.payload));
 }
 
+// ── External URL Opener ──
+
+export async function openExternalUrl(url) {
+  if (isTauri) {
+    try {
+      await invoke('open_external_url', { url });
+      return;
+    } catch (e) {
+      console.warn('Native open_external_url failed:', e);
+    }
+  }
+  window.open(url, '_blank');
+}
+
 
 

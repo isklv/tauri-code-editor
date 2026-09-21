@@ -1,6 +1,7 @@
 /** Monaco setup: worker wiring, language detection and the tab model store. */
 
 import * as monaco from 'monaco-editor';
+import 'monaco-editor/min/vs/editor/editor.main.css';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
@@ -58,7 +59,7 @@ export function languageFor(path) {
 }
 
 export function createEditor(container) {
-  return monaco.editor.create(container, {
+  const ed = monaco.editor.create(container, {
     value: '',
     language: 'plaintext',
     theme: 'vs-dark',
@@ -97,6 +98,8 @@ export function createEditor(container) {
       previewMode: 'prefix',
       insertMode: 'insert',
     },
+    suggestFontSize: 13,
+    suggestLineHeight: 22,
     parameterHints: {
       enabled: true,
       cycle: true,
@@ -108,6 +111,21 @@ export function createEditor(container) {
     formatOnType: true,
     formatOnPaste: true,
   });
+
+  try {
+    monaco.editor.registerOpener?.({
+      openExternal(uri) {
+        const url = typeof uri === 'string' ? uri : uri.toString();
+        if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url)) {
+          window.dispatchEvent(new CustomEvent('geko:open-link', { detail: { url } }));
+          return true;
+        }
+        return false;
+      },
+    });
+  } catch {}
+
+  return ed;
 }
 
 /**
