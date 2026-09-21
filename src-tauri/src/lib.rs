@@ -184,6 +184,13 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
             }
         }
 
+        if let Ok(rootfs) = linux_env::rootfs_dir(app) {
+            let linux_root = rootfs.join("root");
+            if linux_root.exists() {
+                r.push(("Linux Home (/root)", Ok(linux_root)));
+            }
+        }
+
         r.push(("Shared storage", Ok(PathBuf::from("/storage/emulated/0"))));
         r.push((
             "Documents",
@@ -204,6 +211,12 @@ fn root_candidates(app: &AppHandle) -> Vec<Root> {
             {
                 ensure_starter_project(&home_workspace);
                 r.push(("Workspace", Ok(home_workspace)));
+            }
+        }
+        if let Ok(rootfs) = linux_env::rootfs_dir(app) {
+            let linux_root = rootfs.join("root");
+            if linux_root.exists() {
+                r.push(("Linux Home (/root)", Ok(linux_root)));
             }
         }
         r.push(("Home", p.home_dir()));

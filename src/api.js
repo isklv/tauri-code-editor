@@ -253,6 +253,12 @@ export function folderDisplayName(path) {
   if (clean.endsWith('/geko.workspace') || clean === 'geko.workspace') {
     return 'geko.workspace';
   }
+  if (clean.endsWith('/linux-env/alpine/root') || clean.endsWith('/alpine/root')) {
+    return 'Linux Home (/root)';
+  }
+  if (clean.includes('/alpine/root/')) {
+    return '~/' + clean.split('/alpine/root/')[1];
+  }
   const base = basename(clean);
   if (!base || base === '/' || base === '\\') return 'Root';
   return base;
