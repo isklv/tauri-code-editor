@@ -1519,6 +1519,58 @@ function initViewportKeyboardHandling() {
 window.addEventListener('resize', clampLayout);
 initViewportKeyboardHandling();
 
+function initSwipeGestures() {
+  const targets = [$('editor-container'), $('tabbar')].filter(Boolean);
+
+  for (const el of targets) {
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    let tracking = false;
+
+    el.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) {
+        tracking = false;
+        return;
+      }
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      startTime = Date.now();
+      tracking = true;
+    }, { passive: true });
+
+    el.addEventListener('touchend', (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches?.[0];
+      if (!t) return;
+
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      const dt = Date.now() - startTime;
+
+      // Swipe requirements:
+      // - Quick gesture: 50ms <= dt <= 450ms
+      // - Substantial horizontal distance: |dx| >= 50px
+      // - Strongly horizontal: |dx| > 2 * |dy| to avoid conflicting with vertical code scrolling
+      if (dt >= 50 && dt <= 450 && Math.abs(dx) >= 50 && Math.abs(dx) > 2 * Math.abs(dy)) {
+        if (dx < 0) {
+          cycleTab(1);
+        } else {
+          cycleTab(-1);
+        }
+      }
+    }, { passive: true });
+
+    el.addEventListener('touchcancel', () => {
+      tracking = false;
+    }, { passive: true });
+  }
+}
+
+initSwipeGestures();
+
 async function initAppInfo() {
   try {
     const info = await api.getAppInfo();
