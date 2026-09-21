@@ -9,6 +9,7 @@ import { FileTree } from './filetree.js';
 import { TerminalPanel } from './terminal.js';
 import { GitPanel } from './gitpanel.js';
 import { getFileIconHtml, SVG_ICONS } from './icons.js';
+import { setupLsp } from './lsp.js';
 
 // ── Layout ──
 
@@ -264,6 +265,10 @@ setupCompletions(monaco, {
   getRootPath: () => rootPath,
 });
 
+const lspClient = setupLsp(monaco, {
+  getRootPath: () => rootPath,
+});
+
 let refreshDebounceTimer = null;
 function scheduleTreeRefresh(delay = 150) {
   clearTimeout(refreshDebounceTimer);
@@ -441,8 +446,8 @@ async function openDiff(file) {
     if (diffOriginalModel) diffOriginalModel.dispose();
     if (diffModifiedModel) diffModifiedModel.dispose();
 
-    diffOriginalModel = createModel(origText, file.path);
-    diffModifiedModel = createModel(currText, file.path);
+    diffOriginalModel = createModel(origText, file.path, monaco.Uri.parse(`diff-orig://${file.path}`));
+    diffModifiedModel = createModel(currText, file.path, monaco.Uri.parse(`diff-mod://${file.path}`));
 
     diffEditor.setModel({
       original: diffOriginalModel,
@@ -625,6 +630,7 @@ async function saveFile(path = activePath) {
   try {
     await api.writeFile(path, content);
     entry.saved = content;
+    lspClient?.notifySave(entry.model);
     renderTabs();
     setStatus(`Saved ${api.basename(path)}`);
     scheduleTreeRefresh(50);

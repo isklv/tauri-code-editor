@@ -143,7 +143,13 @@ export function fixAndroidComposition(target) {
   });
 }
 
-export function createModel(content, path) {
+export function createModel(content, path, uri) {
+  const modelUri = uri ?? (path ? monaco.Uri.file(path) : undefined);
+  if (modelUri) {
+    const existing = monaco.editor.getModel(modelUri);
+    if (existing) existing.dispose();
+    return monaco.editor.createModel(content, languageFor(path), modelUri);
+  }
   return monaco.editor.createModel(content, languageFor(path));
 }
 

@@ -399,4 +399,32 @@ export async function getAppInfo() {
   return invoke('get_app_info');
 }
 
+// ── Language Server Protocol (LSP) ──
+
+export async function lspStart(lang, cwd) {
+  if (!isTauri) return;
+  return invoke('lsp_start', { lang, cwd });
+}
+
+export async function lspSend(lang, payload) {
+  if (!isTauri) return;
+  return invoke('lsp_send', { lang, payload });
+}
+
+export async function lspStop(lang) {
+  if (!isTauri) return;
+  return invoke('lsp_stop', { lang });
+}
+
+export async function lspSupported(lang) {
+  if (!isTauri) return false;
+  return invoke('lsp_supported', { lang });
+}
+
+export async function onLspMessage(callback) {
+  if (!isTauri) return () => {};
+  return listen('lsp://message', (event) => callback(event.payload));
+}
+
+
 

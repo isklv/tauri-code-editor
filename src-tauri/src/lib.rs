@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub mod git;
 pub mod linux_env;
+pub mod lsp;
 
 // ── Errors ──
 
@@ -936,6 +937,7 @@ pub fn run() {
         .manage(Arc::new(Terminal::default()))
         .manage(Arc::new(FsWatcher::default()))
         .manage(Arc::new(linux_env::InstallState::default()))
+        .manage(Arc::new(lsp::LspManager::default()))
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             default_root,
@@ -974,6 +976,10 @@ pub fn run() {
             git_clone,
             github_get_user,
             github_list_repos,
+            lsp::lsp_start,
+            lsp::lsp_send,
+            lsp::lsp_stop,
+            lsp::lsp_supported,
         ])
         .setup(|app| {
             // The Alpine environment is what provides apk, git and compilers, so
