@@ -534,6 +534,21 @@ fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), Stri
     if !bunfig.exists() {
         let _ = fs::write(bunfig, "[install]\nbackend = \"copyfile\"\n");
     }
+    // Ensure PATH preserves user-installed toolchains (bun, cargo, go) across directories
+    let profile_d = etc_dir.join("profile.d");
+    let _ = fs::create_dir_all(&profile_d);
+    let env_script = profile_d.join("00-geko-env.sh");
+    let _ = fs::write(
+        &env_script,
+        "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
+    );
+    let root_profile = rootfs_path.join("root").join(".profile");
+    if !root_profile.exists() {
+        let _ = fs::write(
+            &root_profile,
+            "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
+        );
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -543,8 +558,6 @@ fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), Stri
     }
 
     // Welcome banner
-    let profile_d = etc_dir.join("profile.d");
-    let _ = fs::create_dir_all(&profile_d);
     let welcome_file = profile_d.join("welcome.sh");
     let welcome_msg = r#"#!/bin/sh
 cat << 'EOF'
@@ -746,7 +759,8 @@ pub fn proot_args(rootfs: &Path, cwd: Option<&str>) -> Vec<String> {
     args
 }
 
-const GUEST_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const GUEST_PATH: &str =
+    "/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 /// A directory on the host that PRoot can be started from: the project folder
 /// when it is usable, otherwise `fallback` (the app's own data directory),
@@ -769,6 +783,7 @@ pub fn proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command> {
     cmd.env("HOME", "/root");
     cmd.env("TMPDIR", "/tmp");
     cmd.env("PATH", GUEST_PATH);
+    cmd.env("BUN_INSTALL", "/root/.bun");
     if let Ok(tmp) = proot_tmp_dir(app) {
         let _ = fs::create_dir_all(&tmp);
         cmd.env("PROOT_TMP_DIR", &tmp);
@@ -787,6 +802,24 @@ pub fn ready_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     let bunfig = rootfs.join("root").join(".bunfig.toml");
     if !bunfig.exists() {
         let _ = fs::write(bunfig, "[install]\nbackend = \"copyfile\"\n");
+    }
+    // Ensure environment script exists in /etc/profile.d/
+    let profile_d = rootfs.join("etc").join("profile.d");
+    if profile_d.exists() {
+        let env_script = profile_d.join("00-geko-env.sh");
+        if !env_script.exists() {
+            let _ = fs::write(
+                &env_script,
+                "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
+            );
+        }
+    }
+    let root_profile = rootfs.join("root").join(".profile");
+    if !root_profile.exists() {
+        let _ = fs::write(
+            &root_profile,
+            "export PATH=\"/root/.bun/bin:/root/.cargo/bin:/root/go/bin:/root/.local/bin:$PATH\"\nexport BUN_INSTALL=\"/root/.bun\"\n",
+        );
     }
     make_executable(&proot);
     #[cfg(unix)]
@@ -813,6 +846,7 @@ pub fn build_proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command
     cmd.env("HOME", "/root");
     cmd.env("TMPDIR", "/tmp");
     cmd.env("PATH", GUEST_PATH);
+    cmd.env("BUN_INSTALL", "/root/.bun");
     if let Ok(tmp) = proot_tmp_dir(app) {
         let _ = fs::create_dir_all(&tmp);
         cmd.env("PROOT_TMP_DIR", tmp.to_string_lossy().into_owned());

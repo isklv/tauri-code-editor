@@ -237,6 +237,25 @@ export class TerminalPanel {
     }
   }
 
+  /**
+   * Navigate the terminal to cwd. If a shell is currently running, sends a cd
+   * command so existing processes and exported environment variables are preserved.
+   * If no shell is running, starts one.
+   */
+  async setCwd(cwd) {
+    this.cwd = cwd ?? this.cwd;
+    if (this.running) {
+      let target = cwd;
+      if (target.includes('/alpine/root')) {
+        const sub = target.split('/alpine/root')[1] || '';
+        target = '/root' + sub;
+      }
+      await ptyWrite(` cd ${JSON.stringify(target)}\n`).catch(() => {});
+    } else {
+      await this.start(cwd, this.shellMode);
+    }
+  }
+
   /** Returns whether a shell is attached, so callers can fall back to another one. */
   async restart(cwd, shellMode) {
     this.term.reset();

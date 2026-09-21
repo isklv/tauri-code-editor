@@ -253,7 +253,7 @@ const gitPanel = new GitPanel($('git-panel-host'), {
   },
   onFolderChanged: async (newRoot) => {
     await openFolder(newRoot);
-    await terminal.restart(newRoot, currentShellMode);
+    await terminal.setCwd(newRoot);
   },
   onError: (msg) => setStatus(msg, true),
   onStatusUpdated: (status) => updateGitStatus(status),
@@ -803,7 +803,13 @@ function showEntryMenu(entry, x, y) {
   const parent = entry.is_dir ? entry.path : api.dirname(entry.path);
   showMenu(x, y, [
     entry.is_dir
-      ? { label: 'Open as root', action: () => openFolder(entry.path) }
+      ? {
+          label: 'Open as root',
+          action: async () => {
+            await openFolder(entry.path);
+            await terminal.setCwd(entry.path);
+          },
+        }
       : { label: 'Open', action: () => openFile(entry.path) },
     { label: 'New file / folder here…', action: () => createEntryUnder(parent) },
     { separator: true },
@@ -831,7 +837,7 @@ async function chooseFolder() {
     : await askFolder(await api.quickRoots(), rootPath ?? '');
   if (!picked) return;
   await openFolder(picked);
-  await terminal.restart(picked);
+  await terminal.setCwd(picked);
 }
 
 $('btn-open').addEventListener('click', chooseFolder);
@@ -841,6 +847,7 @@ $('btn-up').addEventListener('click', async () => {
   const parent = api.dirname(rootPath);
   if (parent === rootPath) return;
   await openFolder(parent);
+  await terminal.setCwd(parent);
 });
 
 $('btn-save').addEventListener('click', () => saveFile());
