@@ -10,7 +10,21 @@
   --hover: #2a2d2e;
   --select: #37373d;
   --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
-  --mono-font: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --mono-font: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Roboto Mono', 'Droid Sans Mono', monospace;
+
+  /* Monaco Suggest Widget colors */
+  --vscode-editorSuggestWidget-background: #252526;
+  --vscode-editorSuggestWidget-border: #454545;
+  --vscode-editorSuggestWidget-foreground: #d4d4d4;
+  --vscode-editorSuggestWidget-selectedForeground: #ffffff;
+  --vscode-editorSuggestWidget-selectedIconForeground: #ffffff;
+  --vscode-editorSuggestWidget-highlightForeground: #2aafff;
+  --vscode-editorSuggestWidget-focusHighlightForeground: #70c5ff;
+  --vscode-editorSuggestWidgetStatus-foreground: #999999;
+  --vscode-focusBorder: #007acc;
+  --vscode-textLink-foreground: #3794ff;
+  --vscode-textLink-activeForeground: #3794ff;
+  --vscode-textCodeBlock-background: #1e1e1e;
 }
 
 * {
@@ -916,6 +930,51 @@ button.statusbar-item:hover {
 .terminal-host {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* ── Monaco Suggest Widget & Autocomplete Colors ── */
+
+.monaco-editor .suggest-widget {
+  font-family: var(--ui-font) !important;
+  color: var(--vscode-editorSuggestWidget-foreground) !important;
+  background-color: var(--vscode-editorSuggestWidget-background) !important;
+  border-color: var(--vscode-editorSuggestWidget-border) !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+  color: var(--vscode-editorSuggestWidget-foreground) !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused {
+  color: var(--vscode-editorSuggestWidget-selectedForeground) !important;
+  background-color: #04395e !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .monaco-icon-label {
+  color: inherit !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row .label-name {
+  color: inherit !important;
+}
+
+.monaco-editor .suggest-widget .monaco-highlighted-label .highlight {
+  color: var(--vscode-editorSuggestWidget-highlightForeground) !important;
+  font-weight: 600;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused .monaco-highlighted-label .highlight {
+  color: var(--vscode-editorSuggestWidget-focusHighlightForeground) !important;
+  font-weight: 700;
+}
+
+.monaco-editor .suggest-widget .suggest-status-bar {
+  color: var(--vscode-editorSuggestWidgetStatus-foreground) !important;
+  font-family: var(--ui-font) !important;
+}
+
+.monaco-editor .suggest-widget .suggest-status-bar .action-label {
+  color: var(--vscode-editorSuggestWidgetStatus-foreground) !important;
 }
 
 /* ── Modal dialogs ── */
