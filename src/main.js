@@ -159,8 +159,11 @@ document.getElementById('app').innerHTML = `
         </div>
       </div>
 
-      <div class="resizer-h" id="resizer-panel"></div>
-      <section class="panel" id="panel">
+      <!-- Starts closed, the way VS Code does: an editor that opens with half the
+           screen taken by a terminal nobody asked for is unusable on a phone.
+           toggleTerminal drives both of these from here on. -->
+      <div class="resizer-h hidden" id="resizer-panel"></div>
+      <section class="panel hidden" id="panel">
         <div class="panel-header">
           <span>Terminal</span>
           <button class="panel-pill" id="btn-install-linux" title="Install Alpine Linux + apk package manager">🐧 Install Linux</button>
