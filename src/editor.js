@@ -147,24 +147,33 @@ export function createEditor(container) {
 export function fixAndroidComposition(target) {
   if (!/Android/.test(navigator.userAgent)) return;
 
-  const textarea = target.getDomNode()?.querySelector('textarea.inputarea');
-  if (!textarea) return;
+  const attach = () => {
+    const textarea = target.getDomNode()?.querySelector('textarea.inputarea');
+    // `setModel(null)` makes Monaco throw its whole view away, textarea and all,
+    // and build a fresh one for the next model -- so this has to run again for
+    // every model, and skip textareas it has already seen.
+    if (!textarea || textarea.dataset.androidComposition) return;
+    textarea.dataset.androidComposition = 'patched';
 
-  let composing = false;
-  // Monaco registered its own listeners when the editor was created, so these
-  // run after its handlers have already seen (and mishandled) the event.
-  textarea.addEventListener('compositionstart', () => {
-    composing = true;
-  });
-  textarea.addEventListener('compositionend', () => {
-    composing = false;
-  });
-  textarea.addEventListener('input', () => {
-    if (!composing) return;
-    textarea.dispatchEvent(
-      new CompositionEvent('compositionupdate', { data: textarea.value, bubbles: true }),
-    );
-  });
+    let composing = false;
+    // Monaco registered its own listeners when the view was built, so these run
+    // after its handlers have already seen (and mishandled) the event.
+    textarea.addEventListener('compositionstart', () => {
+      composing = true;
+    });
+    textarea.addEventListener('compositionend', () => {
+      composing = false;
+    });
+    textarea.addEventListener('input', () => {
+      if (!composing) return;
+      textarea.dispatchEvent(
+        new CompositionEvent('compositionupdate', { data: textarea.value, bubbles: true }),
+      );
+    });
+  };
+
+  attach();
+  target.onDidChangeModel(attach);
 }
 
 export function createModel(content, path, uri) {
