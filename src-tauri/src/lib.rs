@@ -590,7 +590,10 @@ fn read_file_force_text(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_cli_open_targets(state: State<'_, Arc<CliTargets>>, #[allow(unused_variables)] app: AppHandle) -> Vec<String> {
+fn get_cli_open_targets(
+    state: State<'_, Arc<CliTargets>>,
+    #[allow(unused_variables)] app: AppHandle,
+) -> Vec<String> {
     let mut lock = state.0.lock().unwrap();
     #[allow(unused_mut)]
     let mut list = std::mem::take(&mut *lock);
@@ -993,8 +996,14 @@ fn pty_start(
         + 1;
 
     let proxy_url = proxy.as_ref().and_then(|p| p.proxy_url.as_deref());
-    let (session, mut reader) =
-        spawn_app_shell(&app, shell_mode.as_deref(), cwd.as_deref(), cols, rows, proxy_url)?;
+    let (session, mut reader) = spawn_app_shell(
+        &app,
+        shell_mode.as_deref(),
+        cwd.as_deref(),
+        cols,
+        rows,
+        proxy_url,
+    )?;
 
     let emitter = app.clone();
     let term_state = terminal.inner().clone();
@@ -1087,13 +1096,19 @@ fn test_proxy_connection(proxy_url: String) -> Result<bool, String> {
     } else {
         without_proto
     };
-    let host_port = without_auth.split('/').next().unwrap_or(without_auth).trim();
+    let host_port = without_auth
+        .split('/')
+        .next()
+        .unwrap_or(without_auth)
+        .trim();
     if host_port.is_empty() {
         return Err("Empty host in proxy URL".into());
     }
 
     let (host, port) = if let Some((h, p_str)) = host_port.rsplit_once(':') {
-        let p: u16 = p_str.parse().map_err(|_| format!("Invalid port in proxy URL: {p_str}"))?;
+        let p: u16 = p_str
+            .parse()
+            .map_err(|_| format!("Invalid port in proxy URL: {p_str}"))?;
         (h, p)
     } else {
         let default_port = if raw.starts_with("socks") { 1080 } else { 8080 };
@@ -1112,7 +1127,9 @@ fn test_proxy_connection(proxy_url: String) -> Result<bool, String> {
         }
     }
 
-    Err(format!("Could not connect to proxy server at {host}:{port}"))
+    Err(format!(
+        "Could not connect to proxy server at {host}:{port}"
+    ))
 }
 
 #[tauri::command]
@@ -1292,9 +1309,7 @@ fn open_external_url(url: String) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let res = std::process::Command::new("xdg-open")
-            .arg(&url)
-            .spawn();
+        let res = std::process::Command::new("xdg-open").arg(&url).spawn();
         if let Ok(mut child) = res {
             let _ = child.wait();
             return Ok(());
@@ -1302,7 +1317,9 @@ fn open_external_url(url: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", &url])
+            .spawn();
         return Ok(());
     }
     #[cfg(target_os = "macos")]
@@ -1317,8 +1334,7 @@ fn open_external_url(url: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init());
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
 
     #[cfg(not(target_os = "android"))]
     {

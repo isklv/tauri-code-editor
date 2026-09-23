@@ -555,7 +555,7 @@ fn configure_rootfs(rootfs_path: &Path, branch: Option<&str>) -> Result<(), Stri
     if selected_branch != "edge" {
         repo_content.push_str(
             "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main\n\
-             @edge https://dl-cdn.alpinelinux.org/alpine/edge/community\n"
+             @edge https://dl-cdn.alpinelinux.org/alpine/edge/community\n",
         );
     }
     fs::write(apk_dir.join("repositories"), repo_content)
@@ -935,7 +935,8 @@ pub fn get_alpine_config(app: &AppHandle) -> Result<AlpineConfig, String> {
         });
     }
 
-    let content = fs::read_to_string(&repos_file).map_err(|e| format!("cannot read repositories: {e}"))?;
+    let content =
+        fs::read_to_string(&repos_file).map_err(|e| format!("cannot read repositories: {e}"))?;
     let mut current_branch = ALPINE_BRANCH.to_string();
     let mut edge_enabled = false;
 
@@ -978,8 +979,7 @@ pub fn set_alpine_branch(
 
     let etc_dir = rootfs.join("etc");
     let apk_dir = etc_dir.join("apk");
-    fs::create_dir_all(&apk_dir)
-        .map_err(|e| format!("cannot create apk directory: {e}"))?;
+    fs::create_dir_all(&apk_dir).map_err(|e| format!("cannot create apk directory: {e}"))?;
 
     let mut repo_content = format!(
         "https://dl-cdn.alpinelinux.org/alpine/{branch}/main\n\
@@ -988,7 +988,7 @@ pub fn set_alpine_branch(
     if enable_edge && branch != "edge" {
         repo_content.push_str(
             "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main\n\
-             @edge https://dl-cdn.alpinelinux.org/alpine/edge/community\n"
+             @edge https://dl-cdn.alpinelinux.org/alpine/edge/community\n",
         );
     }
     fs::write(apk_dir.join("repositories"), repo_content)
@@ -997,7 +997,10 @@ pub fn set_alpine_branch(
     let app_clone = app.clone();
     let branch_clone = branch.clone();
     std::thread::spawn(move || {
-        emit_log(&app_clone, format!("Switching Alpine branch to {branch_clone}..."));
+        emit_log(
+            &app_clone,
+            format!("Switching Alpine branch to {branch_clone}..."),
+        );
         let cmd_str = if run_upgrade {
             "apk update && apk upgrade --no-cache"
         } else {
@@ -1021,7 +1024,10 @@ pub fn set_alpine_branch(
                 let _ = child.wait();
             }
         }
-        emit_log(&app_clone, format!("Alpine branch switched to {branch_clone} successfully!"));
+        emit_log(
+            &app_clone,
+            format!("Alpine branch switched to {branch_clone} successfully!"),
+        );
         let _ = app_clone.emit(
             "linux-env://complete",
             CompletePayload {

@@ -53,7 +53,11 @@ fn get_server_spec(lang: &str) -> Option<ServerSpec> {
         "go" => Some(ServerSpec {
             binary: "gopls",
             args: &[],
-            guest_locations: &["/root/go/bin/gopls", "/usr/local/bin/gopls", "/usr/bin/gopls"],
+            guest_locations: &[
+                "/root/go/bin/gopls",
+                "/usr/local/bin/gopls",
+                "/usr/bin/gopls",
+            ],
         }),
         "python" => Some(ServerSpec {
             binary: "pyright-langserver",
@@ -111,11 +115,7 @@ fn find_host_binary(name: &str) -> Option<PathBuf> {
 }
 
 /// Spawn the language server process either on the host or inside Alpine PRoot.
-fn spawn_server(
-    app: &AppHandle,
-    lang: &str,
-    cwd: Option<&str>,
-) -> Result<Child, String> {
+fn spawn_server(app: &AppHandle, lang: &str, cwd: Option<&str>) -> Result<Child, String> {
     let spec = get_server_spec(lang)
         .ok_or_else(|| format!("No language server specification for '{lang}'"))?;
 
@@ -287,10 +287,7 @@ pub fn lsp_send(
 }
 
 #[tauri::command]
-pub fn lsp_stop(
-    state: State<'_, Arc<LspManager>>,
-    lang: String,
-) -> Result<(), String> {
+pub fn lsp_stop(state: State<'_, Arc<LspManager>>, lang: String) -> Result<(), String> {
     let mut sessions = state.sessions.lock().unwrap();
     if let Some(mut session) = sessions.remove(&lang) {
         let _ = session.child.kill();
@@ -300,10 +297,7 @@ pub fn lsp_stop(
 }
 
 #[tauri::command]
-pub fn lsp_supported(
-    app: AppHandle,
-    lang: String,
-) -> Result<bool, String> {
+pub fn lsp_supported(app: AppHandle, lang: String) -> Result<bool, String> {
     let spec = match get_server_spec(&lang) {
         Some(s) => s,
         None => return Ok(false),

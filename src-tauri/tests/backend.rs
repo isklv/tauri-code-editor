@@ -59,7 +59,7 @@ fn reading_a_missing_file_reports_the_path_problem() {
 #[test]
 fn shell_round_trips_input_and_output_through_the_pty() {
     let dir = temp_dir("pty");
-    let (mut session, mut reader) = spawn_shell(dir.to_str(), 80, 24).unwrap();
+    let (mut session, mut reader) = spawn_shell(dir.to_str(), 80, 24, None).unwrap();
 
     // Read on a worker thread: the PTY never reaches EOF while the shell lives.
     let (tx, rx) = std::sync::mpsc::channel();
