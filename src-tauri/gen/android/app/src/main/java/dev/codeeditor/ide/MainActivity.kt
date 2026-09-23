@@ -13,6 +13,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  private var activeWebView: android.webkit.WebView? = null
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
@@ -32,6 +34,76 @@ class MainActivity : TauriActivity() {
       }
       insets
     }
+
+    handleIncomingIntent(intent)
+  }
+
+  override fun onWebViewCreate(webView: android.webkit.WebView) {
+    super.onWebViewCreate(webView)
+    activeWebView = webView
+    handleIncomingIntent(intent)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleIncomingIntent(intent)
+  }
+
+  private fun handleIncomingIntent(intent: Intent?) {
+    if (intent == null) return
+    val action = intent.action
+    if (action != Intent.ACTION_VIEW && action != Intent.ACTION_EDIT) return
+    val uri = intent.data ?: return
+
+    val resolvedPath = resolveUriToPath(uri) ?: return
+
+    try {
+      val pendingFile = java.io.File(filesDir, "pending_open_file.txt")
+      pendingFile.writeText(resolvedPath)
+    } catch (_: Exception) {}
+
+    activeWebView?.let { wv ->
+      wv.post {
+        val escaped = resolvedPath.replace("\\", "\\\\").replace("'", "\\'")
+        wv.evaluateJavascript(
+          "window.gekoOpenPath ? window.gekoOpenPath('$escaped') : window.dispatchEvent(new CustomEvent('geko:open-external-file', { detail: { path: '$escaped' } }));",
+          null
+        )
+      }
+    }
+  }
+
+  private fun resolveUriToPath(uri: Uri): String? {
+    if (uri.scheme.equals("file", ignoreCase = true)) {
+      return uri.path
+    }
+    if (uri.scheme.equals("content", ignoreCase = true)) {
+      var displayName = "file_${System.currentTimeMillis()}"
+      try {
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+          val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+          if (nameIndex != -1 && cursor.moveToFirst()) {
+            val name = cursor.getString(nameIndex)
+            if (!name.isNullOrBlank()) displayName = name
+          }
+        }
+      } catch (_: Exception) {}
+
+      return try {
+        val cacheFolder = java.io.File(cacheDir, "opened_files").apply { mkdirs() }
+        val targetFile = java.io.File(cacheFolder, displayName)
+        contentResolver.openInputStream(uri)?.use { input ->
+          targetFile.outputStream().use { output ->
+            input.copyTo(output)
+          }
+        }
+        targetFile.absolutePath
+      } catch (_: Exception) {
+        null
+      }
+    }
+    return null
   }
 
   private fun requestStoragePermissions() {

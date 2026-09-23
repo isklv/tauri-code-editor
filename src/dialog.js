@@ -172,6 +172,99 @@ export function askFolder(roots, initial = '') {
   });
 }
 
+/**
+ * File chooser dialog fallback for platforms without native picker.
+ * Offers named roots and arbitrary path input.
+ */
+export function askFilePath(roots, initial = '') {
+  const backdrop = ensureHost();
+  backdrop.textContent = '';
+  backdrop.hidden = false;
+
+  const box = document.createElement('div');
+  box.className = 'modal';
+
+  const heading = document.createElement('div');
+  heading.className = 'modal-title';
+  heading.textContent = 'Open file';
+  box.appendChild(heading);
+
+  const desc = document.createElement('div');
+  desc.style.fontSize = '12px';
+  desc.style.color = 'var(--fg-dim, #888)';
+  desc.style.margin = '4px 0 12px 0';
+  desc.textContent = 'Enter absolute path or pick starting folder:';
+  box.appendChild(desc);
+
+  const input = document.createElement('input');
+  input.className = 'modal-input';
+  input.value = initial;
+  input.spellcheck = false;
+  input.placeholder = '/path/to/any/file.ext';
+  box.appendChild(input);
+
+  const list = document.createElement('div');
+  list.className = 'modal-list';
+  box.appendChild(list);
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  const cancel = document.createElement('button');
+  cancel.className = 'tool';
+  cancel.textContent = 'Cancel';
+  const ok = document.createElement('button');
+  ok.className = 'tool primary';
+  ok.textContent = 'Open';
+  actions.append(cancel, ok);
+  box.appendChild(actions);
+  backdrop.appendChild(box);
+
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      backdrop.hidden = true;
+      backdrop.textContent = '';
+      document.removeEventListener('keydown', onKey, true);
+      resolve(value);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        finish(null);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        finish(input.value.trim() || null);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+
+    for (const root of roots) {
+      const row = document.createElement('button');
+      row.className = 'modal-list-item';
+      const name = document.createElement('span');
+      name.textContent = root.name;
+      const path = document.createElement('span');
+      path.className = 'modal-list-path';
+      path.textContent = root.path.includes('/alpine/root') ? '/root' : root.path;
+      row.append(name, path);
+      row.addEventListener('click', () => {
+        input.value = root.path.replace(/\/+$/, '') + '/';
+        input.focus();
+      });
+      list.appendChild(row);
+    }
+
+    cancel.addEventListener('click', () => finish(null));
+    ok.addEventListener('click', () => finish(input.value.trim() || null));
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) finish(null);
+    });
+    input.focus();
+    input.select();
+  });
+}
+
 /** Show an informative modal dialog with a Close button. */
 export function showInfo(title, message) {
   const backdrop = ensureHost();

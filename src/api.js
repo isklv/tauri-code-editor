@@ -120,18 +120,72 @@ export async function onFsChange(callback) {
   return listen('fs://change', (event) => callback(event.payload));
 }
 
+export async function readFilePreview(path) {
+  if (isTauri) return invoke('read_file_preview', { path });
+  if (!demoFiles.has(path)) throw new Error(`no such file: ${path}`);
+  const text = demoFiles.get(path);
+  return {
+    path,
+    name: basename(path),
+    size: text.length,
+    is_binary: false,
+    is_image: false,
+    is_media: false,
+    mime: 'text/plain',
+    data_url: null,
+    text_content: text,
+    hex_dump: null,
+  };
+}
+
+export async function readFileForceText(path) {
+  if (isTauri) return invoke('read_file_force_text', { path });
+  return demoFiles.get(path) || '';
+}
+
+export async function getCliOpenTargets() {
+  if (!isTauri) return [];
+  return invoke('get_cli_open_targets');
+}
+
+export async function onOpenFiles(callback) {
+  if (!isTauri) return () => {};
+  return listen('open-files', (event) => callback(event.payload));
+}
+
 /**
  * True when the system folder picker returns a usable filesystem path.
  * Android's picker hands back `content://` URIs that `std::fs` cannot open,
  * so there the app browses folders in its own explorer instead.
  */
 export const hasNativeFolderPicker = isTauri && !/android/i.test(navigator.userAgent);
+export const hasNativeFilePicker = isTauri && !/android/i.test(navigator.userAgent);
 
 export async function pickFolder(defaultPath) {
   if (!hasNativeFolderPicker) return null;
   const { open } = await import('@tauri-apps/plugin-dialog');
   const selected = await open({ directory: true, multiple: false, defaultPath });
   return typeof selected === 'string' ? selected : null;
+}
+
+export async function pickFiles(defaultPath) {
+  if (!hasNativeFilePicker) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    directory: false,
+    multiple: true,
+    defaultPath,
+  });
+  if (!selected) return null;
+  return Array.isArray(selected) ? selected : [selected];
+}
+
+export async function onTauriDrop(callback) {
+  if (!isTauri) return () => {};
+  return listen('tauri://drag-drop', (event) => {
+    const paths = event.payload?.paths || [];
+    if (paths.length > 0) callback(paths);
+  });
 }
 
 export async function pickSavePath(defaultPath) {
