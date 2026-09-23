@@ -196,33 +196,44 @@ export async function pickSavePath(defaultPath) {
 
 // ── Terminal ──
 
-export async function ptyStart(cwd, cols, rows, shellMode = null) {
+export async function ptyStart(cwd, cols, rows, shellMode = null, proxy = null) {
   if (!isTauri) throw new Error('terminal requires the desktop app');
-  return invoke('pty_start', { cwd, cols, rows, shellMode });
+  return invoke('pty_start', { cwd, cols, rows, shellMode, proxy });
 }
 
-export async function ptyWrite(data) {
+export async function ptyWrite(data, id = null) {
   if (!isTauri) return;
-  return invoke('pty_write', { data });
+  return invoke('pty_write', { data, id });
 }
 
-export async function ptyResize(cols, rows) {
+export async function ptyResize(cols, rows, id = null) {
   if (!isTauri) return;
-  return invoke('pty_resize', { cols, rows });
+  return invoke('pty_resize', { cols, rows, id });
 }
 
-export async function ptyKill() {
+export async function ptyKill(id = null) {
   if (!isTauri) return;
-  return invoke('pty_kill');
+  return invoke('pty_kill', { id });
 }
 
-/** Subscribe to PTY output; the callback receives a Uint8Array. */
+export async function testProxyConnection(proxyUrl) {
+  if (!isTauri) return true;
+  return invoke('test_proxy_connection', { proxyUrl });
+}
+
+/** Subscribe to PTY output; the callback receives (Uint8Array, sessionId). */
 export async function onPtyOutput(callback) {
   if (!isTauri) return () => {};
-  return listen('pty://output', (event) => callback(Uint8Array.from(event.payload)));
+  return listen('pty://output', (event) => {
+    if (event.payload && typeof event.payload === 'object' && 'bytes' in event.payload) {
+      callback(Uint8Array.from(event.payload.bytes), event.payload.id);
+    } else {
+      callback(Uint8Array.from(event.payload), null);
+    }
+  });
 }
 
-/** Subscribe to shell exit. */
+/** Subscribe to shell exit; callback receives sessionId. */
 export async function onPtyExit(callback) {
   if (!isTauri) return () => {};
   return listen('pty://exit', (event) => callback(event.payload));

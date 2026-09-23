@@ -793,10 +793,41 @@ impl PtySession {
 }
 
 #[derive(Default)]
-struct Terminal {
-    session: Mutex<Option<PtySession>>,
+pub struct Terminal {
+    sessions: Mutex<std::collections::HashMap<u64, PtySession>>,
     session_id: std::sync::atomic::AtomicU64,
-    active_id: std::sync::atomic::AtomicU64,
+}
+
+#[derive(Serialize, Clone)]
+struct PtyOutputPayload {
+    id: u64,
+    bytes: Vec<u8>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+pub struct ProxyOptions {
+    pub proxy_url: Option<String>,
+    pub isolate_env: Option<bool>,
+    pub isolated_home: Option<bool>,
+}
+
+fn apply_proxy_to_cmd(cmd: &mut CommandBuilder, proxy_url: Option<&str>) {
+    if let Some(proxy) = proxy_url.filter(|s| !s.trim().is_empty()) {
+        let clean = proxy.trim();
+        let socks_url = if clean.starts_with("socks5://") {
+            clean.replacen("socks5://", "socks5h://", 1)
+        } else {
+            clean.to_string()
+        };
+        cmd.env("ALL_PROXY", &socks_url);
+        cmd.env("all_proxy", &socks_url);
+        cmd.env("HTTP_PROXY", clean);
+        cmd.env("http_proxy", clean);
+        cmd.env("HTTPS_PROXY", clean);
+        cmd.env("https_proxy", clean);
+        cmd.env("NO_PROXY", "localhost,127.0.0.1,::1");
+        cmd.env("no_proxy", "localhost,127.0.0.1,::1");
+    }
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -852,6 +883,7 @@ pub fn spawn_shell(
     cwd: Option<&str>,
     cols: u16,
     rows: u16,
+    proxy_url: Option<&str>,
 ) -> Result<(PtySession, Box<dyn Read + Send>), String> {
     let mut cmd = CommandBuilder::new(default_shell());
     if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
@@ -860,6 +892,7 @@ pub fn spawn_shell(
         cmd.env("HOME", dir);
     }
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
     // An Android app process usually starts without PATH, which leaves the
     // shell unable to find even the toybox applets.
     #[cfg(target_os = "android")]
@@ -867,6 +900,7 @@ pub fn spawn_shell(
         "PATH",
         "/system/bin:/system/xbin:/vendor/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin",
     );
+    apply_proxy_to_cmd(&mut cmd, proxy_url);
 
     spawn_with_command(cmd, cols, rows)
 }
@@ -877,6 +911,7 @@ pub fn spawn_app_shell(
     cwd: Option<&str>,
     cols: u16,
     rows: u16,
+    proxy_url: Option<&str>,
 ) -> Result<(PtySession, Box<dyn Read + Send>), String> {
     let explicit_alpine = matches!(shell_mode, Some("alpine"));
     let use_alpine = match shell_mode {
@@ -886,7 +921,7 @@ pub fn spawn_app_shell(
     };
 
     if use_alpine {
-        match linux_env::build_proot_command(app, cwd) {
+        match linux_env::build_proot_command(app, cwd, proxy_url) {
             Some(cmd) => match spawn_with_command(cmd, cols, rows) {
                 Ok(res) => {
                     linux_env::emit_log(app, "started the Alpine shell");
@@ -907,7 +942,7 @@ pub fn spawn_app_shell(
         }
     }
 
-    spawn_shell(cwd, cols, rows)
+    spawn_shell(cwd, cols, rows, proxy_url)
 }
 
 /// Tell the webview that the Alpine shell was requested but the native shell is
@@ -950,19 +985,16 @@ fn pty_start(
     cols: u16,
     rows: u16,
     shell_mode: Option<String>,
+    proxy: Option<ProxyOptions>,
 ) -> Result<u64, String> {
-    // Generate a fresh session ID before killing old session
     let id = terminal
         .session_id
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
         + 1;
-    terminal
-        .active_id
-        .store(id, std::sync::atomic::Ordering::SeqCst);
-    kill_session(&terminal);
 
+    let proxy_url = proxy.as_ref().and_then(|p| p.proxy_url.as_deref());
     let (session, mut reader) =
-        spawn_app_shell(&app, shell_mode.as_deref(), cwd.as_deref(), cols, rows)?;
+        spawn_app_shell(&app, shell_mode.as_deref(), cwd.as_deref(), cols, rows, proxy_url)?;
 
     let emitter = app.clone();
     let term_state = terminal.inner().clone();
@@ -972,57 +1004,115 @@ fn pty_start(
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if emitter.emit("pty://output", &buf[..n]).is_err() {
+                    let payload = PtyOutputPayload {
+                        id,
+                        bytes: buf[..n].to_vec(),
+                    };
+                    if emitter.emit("pty://output", &payload).is_err() {
                         break;
                     }
                 }
             }
         }
-        // Only emit exit if this session is STILL the active session (not replaced by a newer session and not killed)
-        if term_state
-            .active_id
-            .load(std::sync::atomic::Ordering::SeqCst)
-            == id
-        {
-            let _ = emitter.emit("pty://exit", id);
-        }
+        term_state.sessions.lock().unwrap().remove(&id);
+        let _ = emitter.emit("pty://exit", id);
     });
 
-    *terminal.session.lock().unwrap() = Some(session);
+    terminal.sessions.lock().unwrap().insert(id, session);
     Ok(id)
 }
 
 #[tauri::command]
-fn pty_write(terminal: State<'_, Arc<Terminal>>, data: String) -> Result<(), String> {
-    let mut guard = terminal.session.lock().unwrap();
-    guard
-        .as_mut()
-        .ok_or("terminal is not running")?
-        .write(&data)
+fn pty_write(
+    terminal: State<'_, Arc<Terminal>>,
+    id: Option<u64>,
+    data: String,
+) -> Result<(), String> {
+    let mut guard = terminal.sessions.lock().unwrap();
+    let session = if let Some(id) = id {
+        guard.get_mut(&id).ok_or("terminal session not found")?
+    } else {
+        guard.values_mut().next().ok_or("terminal is not running")?
+    };
+    session.write(&data)
 }
 
 #[tauri::command]
-fn pty_resize(terminal: State<'_, Arc<Terminal>>, cols: u16, rows: u16) -> Result<(), String> {
-    let guard = terminal.session.lock().unwrap();
-    match guard.as_ref() {
-        Some(session) => session.resize(cols, rows),
-        None => Ok(()), // resizing a terminal that is not running is a no-op
+fn pty_resize(
+    terminal: State<'_, Arc<Terminal>>,
+    id: Option<u64>,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let guard = terminal.sessions.lock().unwrap();
+    if let Some(id) = id {
+        if let Some(session) = guard.get(&id) {
+            session.resize(cols, rows)?;
+        }
+    } else if let Some(session) = guard.values().next() {
+        session.resize(cols, rows)?;
     }
-}
-
-fn kill_session(terminal: &Terminal) {
-    if let Some(mut session) = terminal.session.lock().unwrap().take() {
-        session.kill();
-    }
-}
-
-#[tauri::command]
-fn pty_kill(terminal: State<'_, Arc<Terminal>>) -> Result<(), String> {
-    terminal
-        .active_id
-        .store(0, std::sync::atomic::Ordering::SeqCst);
-    kill_session(&terminal);
     Ok(())
+}
+
+#[tauri::command]
+fn pty_kill(terminal: State<'_, Arc<Terminal>>, id: Option<u64>) -> Result<(), String> {
+    let mut guard = terminal.sessions.lock().unwrap();
+    if let Some(id) = id {
+        if let Some(mut session) = guard.remove(&id) {
+            session.kill();
+        }
+    } else {
+        for (_, mut session) in guard.drain() {
+            session.kill();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn test_proxy_connection(proxy_url: String) -> Result<bool, String> {
+    let raw = proxy_url.trim();
+    if raw.is_empty() {
+        return Err("Proxy URL is empty".into());
+    }
+
+    let without_proto = if let Some(idx) = raw.find("://") {
+        &raw[idx + 3..]
+    } else {
+        raw
+    };
+    let without_auth = if let Some(idx) = without_proto.find('@') {
+        &without_proto[idx + 1..]
+    } else {
+        without_proto
+    };
+    let host_port = without_auth.split('/').next().unwrap_or(without_auth).trim();
+    if host_port.is_empty() {
+        return Err("Empty host in proxy URL".into());
+    }
+
+    let (host, port) = if let Some((h, p_str)) = host_port.rsplit_once(':') {
+        let p: u16 = p_str.parse().map_err(|_| format!("Invalid port in proxy URL: {p_str}"))?;
+        (h, p)
+    } else {
+        let default_port = if raw.starts_with("socks") { 1080 } else { 8080 };
+        (host_port, default_port)
+    };
+
+    use std::net::ToSocketAddrs;
+    let addrs = format!("{host}:{port}")
+        .to_socket_addrs()
+        .map_err(|e| format!("Cannot resolve host {host}:{port}: {e}"))?;
+
+    let timeout = std::time::Duration::from_secs(3);
+    for addr in addrs {
+        if std::net::TcpStream::connect_timeout(&addr, timeout).is_ok() {
+            return Ok(true);
+        }
+    }
+
+    Err(format!("Could not connect to proxy server at {host}:{port}"))
 }
 
 #[tauri::command]
@@ -1281,6 +1371,7 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            test_proxy_connection,
             get_linux_env_status,
             install_linux_env,
             get_alpine_config,

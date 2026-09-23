@@ -11,6 +11,7 @@ import { GitPanel } from './gitpanel.js';
 import { getFileIconHtml, SVG_ICONS } from './icons.js';
 import { setupLsp } from './lsp.js';
 import { renderMarkdown } from './markdown.js';
+import { showOpenTerminalTabDialog, showProxyManagerModal } from './proxymanager.js';
 
 // ── Layout ──
 
@@ -117,6 +118,12 @@ document.getElementById('app').innerHTML = `
           <button class="icon-button topbar-btn" id="btn-save" title="Save file (Ctrl+S)">
             ${SVG_ICONS.save}
           </button>
+          <button class="icon-button topbar-btn" id="btn-new-term-tab" title="New Terminal Tab (Ctrl+Shift+T)">
+            ＋💻
+          </button>
+          <button class="icon-button topbar-btn" id="btn-proxy-manager" title="Proxy Manager">
+            🛡️
+          </button>
           <button class="icon-button topbar-btn" id="btn-toggle-terminal" title="Toggle Terminal (Ctrl+\`)">
             ${SVG_ICONS.terminal}
           </button>
@@ -136,6 +143,7 @@ document.getElementById('app').innerHTML = `
 
       <div class="editor-container" id="editor-container">
         <div class="editor" id="editor"></div>
+        <div class="editor-terminals" id="editor-terminals" style="display:none;"></div>
         <div class="markdown-preview" id="markdown-preview" style="display:none;">
           <div class="markdown-preview-header">
             <span class="markdown-preview-title">Markdown Preview</span>
@@ -358,6 +366,10 @@ function toggleMarkdownPreview(force) {
 }
 
 function openWebPreview(url) {
+  if (activeTerminalId) {
+    activeTerminalId = null;
+    if ($('editor-terminals')) $('editor-terminals').style.display = 'none';
+  }
   activeWebUrl = url;
   if (activePath && openFiles.has(activePath)) {
     openFiles.get(activePath).viewState = editor.saveViewState();
@@ -385,9 +397,124 @@ function closeWebPreview(restoreFile = true) {
   if (restoreFile) {
     const next = [...openFiles.keys()].pop();
     if (next) activate(next);
-    else {
+    else if (openTerminals.size > 0) {
+      activateTerminalTab([...openTerminals.keys()].pop());
+    } else {
       editor.setModel(null);
       $('editor').style.display = 'block';
+    }
+  }
+  renderTabs();
+  updateStatus();
+}
+
+// ── Terminal Tabs State & Management ──
+let terminalTabCounter = 0;
+/** @type {Map<string, {id: string, title: string, shellMode: string, proxyConfig: any, panel: TerminalPanel, hostEl: HTMLElement}>} */
+const openTerminals = new Map();
+let activeTerminalId = null;
+
+async function promptOpenTerminalTab() {
+  const res = await showOpenTerminalTabDialog();
+  if (!res) return;
+  await openTerminalTab(res);
+}
+
+async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null } = {}) {
+  const termId = `term_${++terminalTabCounter}`;
+  const title = proxyConfig
+    ? `🛡️ ${proxyConfig.name || 'Proxy'}`
+    : `💻 Term ${terminalTabCounter}`;
+
+  const hostContainer = $('editor-terminals');
+  const pane = document.createElement('div');
+  pane.className = 'editor-term-pane';
+  pane.id = `editor-term-${termId}`;
+  hostContainer.appendChild(pane);
+
+  const termPanel = new TerminalPanel(pane, null);
+
+  const record = {
+    id: termId,
+    title,
+    shellMode,
+    proxyConfig,
+    panel: termPanel,
+    hostEl: pane,
+  };
+  openTerminals.set(termId, record);
+
+  closeDiff();
+  if (activeWebUrl) closeWebPreview(false);
+  activateTerminalTab(termId);
+
+  const proxyOpts = proxyConfig ? { proxy_url: proxyConfig.proxy_url } : null;
+  const started = await termPanel.start(rootPath, shellMode, proxyOpts);
+  if (started) {
+    setStatus(`Terminal tab opened (${shellMode}${proxyConfig ? ' via ' + proxyConfig.name : ''})`);
+  }
+  renderTabs();
+  return termId;
+}
+
+function activateTerminalTab(termId) {
+  if (!openTerminals.has(termId)) return;
+  if (activeWebUrl) closeWebPreview(false);
+  if (activePath && openFiles.has(activePath)) {
+    const prev = openFiles.get(activePath);
+    if (prev?.model) {
+      prev.viewState = editor.saveViewState();
+    }
+  }
+  activePath = null;
+  activeTerminalId = termId;
+  tree.setActive(null);
+
+  $('diff-editor').style.display = 'none';
+  $('markdown-preview').style.display = 'none';
+  $('editor-container').classList.remove('split-preview');
+  $('editor').style.display = 'none';
+  if ($('image-preview-pane')) $('image-preview-pane').style.display = 'none';
+  if ($('binary-preview-pane')) $('binary-preview-pane').style.display = 'none';
+  if ($('web-preview-pane')) $('web-preview-pane').style.display = 'none';
+
+  const hostContainer = $('editor-terminals');
+  hostContainer.style.display = 'flex';
+
+  for (const [id, t] of openTerminals.entries()) {
+    t.hostEl.style.display = id === termId ? 'flex' : 'none';
+  }
+
+  const current = openTerminals.get(termId);
+  setTimeout(() => {
+    current.panel.fit();
+    current.panel.focus();
+  }, 20);
+
+  renderTabs();
+  updateStatus();
+}
+
+async function closeTerminalTab(termId) {
+  const t = openTerminals.get(termId);
+  if (!t) return;
+  await t.panel.dispose();
+  t.hostEl.remove();
+  openTerminals.delete(termId);
+
+  if (activeTerminalId === termId) {
+    activeTerminalId = null;
+    const remainingTermIds = [...openTerminals.keys()];
+    if (remainingTermIds.length > 0) {
+      activateTerminalTab(remainingTermIds[remainingTermIds.length - 1]);
+    } else {
+      $('editor-terminals').style.display = 'none';
+      const next = [...openFiles.keys()].pop();
+      if (next) activate(next);
+      else {
+        editor.setModel(null);
+        $('editor').style.display = 'block';
+      }
     }
   }
   renderTabs();
@@ -902,6 +1029,10 @@ function activate(path) {
   if (activeWebUrl) {
     closeWebPreview(false);
   }
+  if (activeTerminalId) {
+    activeTerminalId = null;
+    if ($('editor-terminals')) $('editor-terminals').style.display = 'none';
+  }
   if (activePath && openFiles.has(activePath)) {
     const prev = openFiles.get(activePath);
     if (prev?.model) {
@@ -1034,7 +1165,9 @@ async function closeFile(path) {
     activePath = null;
     const next = [...openFiles.keys()].pop();
     if (next) activate(next);
-    else {
+    else if (openTerminals.size > 0) {
+      activateTerminalTab([...openTerminals.keys()].pop());
+    } else {
       if (isMarkdownPreviewOpen) toggleMarkdownPreview(false);
       $('image-preview-pane').style.display = 'none';
       $('binary-preview-pane').style.display = 'none';
@@ -1058,7 +1191,7 @@ function renderTabs() {
   for (const path of openFiles.keys()) {
     const tab = document.createElement('div');
     tab.className = 'tab';
-    if (path === activePath && !activeWebUrl) tab.classList.add('active');
+    if (path === activePath && !activeWebUrl && !activeTerminalId) tab.classList.add('active');
     if (isDirty(path)) tab.classList.add('dirty');
     tab.title = path;
 
@@ -1089,7 +1222,8 @@ function renderTabs() {
 
   if (activeWebUrl) {
     const tab = document.createElement('div');
-    tab.className = 'tab web-tab active';
+    tab.className = 'tab web-tab';
+    if (!activeTerminalId) tab.classList.add('active');
     tab.title = activeWebUrl;
 
     const icon = document.createElement('span');
@@ -1119,6 +1253,50 @@ function renderTabs() {
     });
     bar.appendChild(tab);
   }
+
+  for (const [termId, term] of openTerminals.entries()) {
+    const tab = document.createElement('div');
+    tab.className = 'tab term-tab';
+    if (termId === activeTerminalId) tab.classList.add('active');
+    if (term.proxyConfig) tab.classList.add('proxy-tab');
+    tab.title = term.proxyConfig
+      ? `${term.title} (${term.proxyConfig.proxy_url})`
+      : term.title;
+
+    const icon = document.createElement('span');
+    icon.className = 'tab-icon';
+    icon.textContent = term.proxyConfig ? '🛡️' : '💻';
+    tab.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.textContent = term.title;
+    tab.appendChild(name);
+
+    const close = document.createElement('span');
+    close.className = 'close';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeTerminalTab(termId);
+    });
+    tab.appendChild(close);
+
+    tab.addEventListener('click', () => {
+      closeDiff();
+      if (activeWebUrl) closeWebPreview(false);
+      activateTerminalTab(termId);
+    });
+    bar.appendChild(tab);
+  }
+
+  const addTabBtn = document.createElement('button');
+  addTabBtn.className = 'tab-add-btn';
+  addTabBtn.title = 'New Terminal Tab (Ctrl+Shift+T)';
+  addTabBtn.textContent = '＋';
+  addTabBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    promptOpenTerminalTab();
+  });
+  bar.appendChild(addTabBtn);
 }
 
 function cycleTab(step) {
@@ -1801,6 +1979,11 @@ window.addEventListener('keydown', (e) => {
 
   // VS Code global shortcuts
   if (e.shiftKey) {
+    if (e.key.toLowerCase() === 't') {
+      e.preventDefault();
+      promptOpenTerminalTab();
+      return;
+    }
     if (e.key.toLowerCase() === 'g') {
       e.preventDefault();
       setSidebarView('git');
@@ -1842,6 +2025,10 @@ window.addEventListener('keydown', (e) => {
     handler();
   }
 });
+
+// Terminal tab and proxy manager buttons
+$('btn-new-term-tab')?.addEventListener('click', () => promptOpenTerminalTab());
+$('btn-proxy-manager')?.addEventListener('click', () => showProxyManagerModal());
 
 // Toolbar buttons for preview & external links
 $('btn-md-preview')?.addEventListener('click', () => toggleMarkdownPreview());
