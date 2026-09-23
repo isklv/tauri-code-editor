@@ -590,7 +590,7 @@ fn read_file_force_text(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_cli_open_targets(state: State<'_, Arc<CliTargets>>, _app: AppHandle) -> Vec<String> {
+fn get_cli_open_targets(state: State<'_, Arc<CliTargets>>, #[allow(unused_variables)] app: AppHandle) -> Vec<String> {
     let mut lock = state.0.lock().unwrap();
     #[allow(unused_mut)]
     let mut list = std::mem::take(&mut *lock);

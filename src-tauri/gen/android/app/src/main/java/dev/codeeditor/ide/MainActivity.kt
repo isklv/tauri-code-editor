@@ -61,7 +61,7 @@ class MainActivity : TauriActivity() {
     try {
       val pendingFile = java.io.File(filesDir, "pending_open_file.txt")
       pendingFile.writeText(resolvedPath)
-    } catch (_: Exception) {}
+    } catch (e: Exception) {}
 
     activeWebView?.let { wv ->
       wv.post {
@@ -88,7 +88,7 @@ class MainActivity : TauriActivity() {
             if (!name.isNullOrBlank()) displayName = name
           }
         }
-      } catch (_: Exception) {}
+      } catch (e: Exception) {}
 
       return try {
         val cacheFolder = java.io.File(cacheDir, "opened_files").apply { mkdirs() }
@@ -99,7 +99,7 @@ class MainActivity : TauriActivity() {
           }
         }
         targetFile.absolutePath
-      } catch (_: Exception) {
+      } catch (e: Exception) {
         null
       }
     }
