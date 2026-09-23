@@ -20,6 +20,10 @@ notify = "8"
 ureq = "3.4.2"
 flate2 = "1.1.10"
 tar = "0.4.46"
+base64 = "0.22"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

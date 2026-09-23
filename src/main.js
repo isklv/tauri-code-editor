@@ -1,7 +1,7 @@
 import './style.css';
 
 import * as api from './api.js';
-import { askConfirm, askFolder, askLinkAction, askText, showInfo } from './dialog.js';
+import { askConfirm, askFolder, askFilePath, askLinkAction, askText, showInfo } from './dialog.js';
 import { showMenu } from './contextmenu.js';
 import { openPalette } from './palette.js';
 import { createDiffEditor, createEditor, createModel, fixAndroidComposition, monaco, setupCompletions } from './editor.js';
@@ -11,6 +11,7 @@ import { GitPanel } from './gitpanel.js';
 import { getFileIconHtml, SVG_ICONS } from './icons.js';
 import { setupLsp } from './lsp.js';
 import { renderMarkdown } from './markdown.js';
+import { showOpenTerminalTabDialog, showProxyManagerModal } from './proxymanager.js';
 
 // ── Layout ──
 
@@ -47,6 +48,7 @@ document.getElementById('app').innerHTML = `
         <div class="sidebar-header">
           <span class="title" id="root-name">Explorer</span>
           <button class="icon-button" id="btn-up" title="Go to parent folder">↑</button>
+          <button class="icon-button" id="btn-open-file-sidebar" title="Open file (Ctrl+O)">📄</button>
           <button class="icon-button" id="btn-new-file" title="New file">＋</button>
           <button class="icon-button" id="btn-refresh" title="Refresh">⟳</button>
         </div>
@@ -95,6 +97,10 @@ document.getElementById('app').innerHTML = `
             <span class="topbar-ws-title" id="topbar-root-name">Open Folder</span>
             <span class="topbar-ws-chevron">${SVG_ICONS.chevronDown}</span>
           </button>
+          <button class="topbar-workspace-btn" id="btn-open-file" title="Open file (Ctrl+O)" style="margin-left: 2px;">
+            <span class="topbar-ws-icon">${SVG_ICONS.file}</span>
+            <span class="topbar-ws-title">Open File</span>
+          </button>
         </div>
 
         <div class="topbar-center">
@@ -111,6 +117,12 @@ document.getElementById('app').innerHTML = `
           </button>
           <button class="icon-button topbar-btn" id="btn-save" title="Save file (Ctrl+S)">
             ${SVG_ICONS.save}
+          </button>
+          <button class="icon-button topbar-btn" id="btn-new-term-tab" title="New Terminal Tab (Ctrl+Shift+T)">
+            ＋💻
+          </button>
+          <button class="icon-button topbar-btn" id="btn-proxy-manager" title="Proxy Manager">
+            🛡️
           </button>
           <button class="icon-button topbar-btn" id="btn-toggle-terminal" title="Toggle Terminal (Ctrl+\`)">
             ${SVG_ICONS.terminal}
@@ -131,6 +143,7 @@ document.getElementById('app').innerHTML = `
 
       <div class="editor-container" id="editor-container">
         <div class="editor" id="editor"></div>
+        <div class="editor-terminals" id="editor-terminals" style="display:none;"></div>
         <div class="markdown-preview" id="markdown-preview" style="display:none;">
           <div class="markdown-preview-header">
             <span class="markdown-preview-title">Markdown Preview</span>
@@ -156,6 +169,39 @@ document.getElementById('app').innerHTML = `
             <button class="icon-button" id="btn-web-close" title="Close Web Tab">×</button>
           </div>
           <iframe class="web-preview-iframe" id="web-preview-iframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
+        </div>
+        <div class="image-preview-pane" id="image-preview-pane" style="display:none;">
+          <div class="image-preview-toolbar">
+            <span class="image-preview-title" id="image-preview-title">Image</span>
+            <span class="image-preview-meta" id="image-preview-meta"></span>
+            <span class="spacer"></span>
+            <button class="tool" id="btn-img-zoom-out" title="Zoom out">-</button>
+            <span class="image-preview-zoom" id="image-preview-zoom-val">100%</span>
+            <button class="tool" id="btn-img-zoom-in" title="Zoom in">+</button>
+            <button class="tool" id="btn-img-zoom-reset" title="Actual size">1:1</button>
+            <button class="tool" id="btn-img-zoom-fit" title="Fit to screen">Fit</button>
+            <button class="icon-button" id="btn-close-image-preview" title="Close Preview">×</button>
+          </div>
+          <div class="image-preview-viewport" id="image-preview-viewport">
+            <img id="image-preview-img" class="image-preview-img" alt="Preview" />
+            <div id="media-preview-container" class="media-preview-container" style="display:none;"></div>
+          </div>
+        </div>
+        <div class="binary-preview-pane" id="binary-preview-pane" style="display:none;">
+          <div class="binary-preview-toolbar">
+            <span class="binary-preview-title" id="binary-preview-title">Binary File</span>
+            <span class="binary-preview-meta" id="binary-preview-meta"></span>
+            <span class="spacer"></span>
+            <button class="tool primary" id="btn-binary-force-text" title="Try opening in text editor (UTF-8 lossy)">Open as Text</button>
+            <button class="icon-button" id="btn-close-binary-preview" title="Close">×</button>
+          </div>
+          <div class="binary-preview-content">
+            <div class="binary-notice">
+              <div class="binary-notice-title">This file is binary or uses an unsupported encoding</div>
+              <div class="binary-notice-desc">Geko can display a hex inspection preview below, or you can force-open it in the code editor.</div>
+            </div>
+            <pre class="binary-hex-dump" id="binary-hex-dump"></pre>
+          </div>
         </div>
       </div>
 
@@ -190,6 +236,12 @@ document.getElementById('app').innerHTML = `
         <div class="terminal-host" id="terminal"></div>
         <div class="term-keys" id="term-keys"></div>
       </section>
+      <div class="drop-overlay" id="drop-overlay" style="display:none;">
+        <div class="drop-overlay-box">
+          <span class="drop-overlay-icon">${SVG_ICONS.file}</span>
+          <span class="drop-overlay-title">Drop files to open in Geko</span>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -314,6 +366,10 @@ function toggleMarkdownPreview(force) {
 }
 
 function openWebPreview(url) {
+  if (activeTerminalId) {
+    activeTerminalId = null;
+    if ($('editor-terminals')) $('editor-terminals').style.display = 'none';
+  }
   activeWebUrl = url;
   if (activePath && openFiles.has(activePath)) {
     openFiles.get(activePath).viewState = editor.saveViewState();
@@ -341,9 +397,124 @@ function closeWebPreview(restoreFile = true) {
   if (restoreFile) {
     const next = [...openFiles.keys()].pop();
     if (next) activate(next);
-    else {
+    else if (openTerminals.size > 0) {
+      activateTerminalTab([...openTerminals.keys()].pop());
+    } else {
       editor.setModel(null);
       $('editor').style.display = 'block';
+    }
+  }
+  renderTabs();
+  updateStatus();
+}
+
+// ── Terminal Tabs State & Management ──
+let terminalTabCounter = 0;
+/** @type {Map<string, {id: string, title: string, shellMode: string, proxyConfig: any, panel: TerminalPanel, hostEl: HTMLElement}>} */
+const openTerminals = new Map();
+let activeTerminalId = null;
+
+async function promptOpenTerminalTab() {
+  const res = await showOpenTerminalTabDialog();
+  if (!res) return;
+  await openTerminalTab(res);
+}
+
+async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null } = {}) {
+  const termId = `term_${++terminalTabCounter}`;
+  const title = proxyConfig
+    ? `🛡️ ${proxyConfig.name || 'Proxy'}`
+    : `💻 Term ${terminalTabCounter}`;
+
+  const hostContainer = $('editor-terminals');
+  const pane = document.createElement('div');
+  pane.className = 'editor-term-pane';
+  pane.id = `editor-term-${termId}`;
+  hostContainer.appendChild(pane);
+
+  const termPanel = new TerminalPanel(pane, null);
+
+  const record = {
+    id: termId,
+    title,
+    shellMode,
+    proxyConfig,
+    panel: termPanel,
+    hostEl: pane,
+  };
+  openTerminals.set(termId, record);
+
+  closeDiff();
+  if (activeWebUrl) closeWebPreview(false);
+  activateTerminalTab(termId);
+
+  const proxyOpts = proxyConfig ? { proxy_url: proxyConfig.proxy_url } : null;
+  const started = await termPanel.start(rootPath, shellMode, proxyOpts);
+  if (started) {
+    setStatus(`Terminal tab opened (${shellMode}${proxyConfig ? ' via ' + proxyConfig.name : ''})`);
+  }
+  renderTabs();
+  return termId;
+}
+
+function activateTerminalTab(termId) {
+  if (!openTerminals.has(termId)) return;
+  if (activeWebUrl) closeWebPreview(false);
+  if (activePath && openFiles.has(activePath)) {
+    const prev = openFiles.get(activePath);
+    if (prev?.model) {
+      prev.viewState = editor.saveViewState();
+    }
+  }
+  activePath = null;
+  activeTerminalId = termId;
+  tree.setActive(null);
+
+  $('diff-editor').style.display = 'none';
+  $('markdown-preview').style.display = 'none';
+  $('editor-container').classList.remove('split-preview');
+  $('editor').style.display = 'none';
+  if ($('image-preview-pane')) $('image-preview-pane').style.display = 'none';
+  if ($('binary-preview-pane')) $('binary-preview-pane').style.display = 'none';
+  if ($('web-preview-pane')) $('web-preview-pane').style.display = 'none';
+
+  const hostContainer = $('editor-terminals');
+  hostContainer.style.display = 'flex';
+
+  for (const [id, t] of openTerminals.entries()) {
+    t.hostEl.style.display = id === termId ? 'flex' : 'none';
+  }
+
+  const current = openTerminals.get(termId);
+  setTimeout(() => {
+    current.panel.fit();
+    current.panel.focus();
+  }, 20);
+
+  renderTabs();
+  updateStatus();
+}
+
+async function closeTerminalTab(termId) {
+  const t = openTerminals.get(termId);
+  if (!t) return;
+  await t.panel.dispose();
+  t.hostEl.remove();
+  openTerminals.delete(termId);
+
+  if (activeTerminalId === termId) {
+    activeTerminalId = null;
+    const remainingTermIds = [...openTerminals.keys()];
+    if (remainingTermIds.length > 0) {
+      activateTerminalTab(remainingTermIds[remainingTermIds.length - 1]);
+    } else {
+      $('editor-terminals').style.display = 'none';
+      const next = [...openFiles.keys()].pop();
+      if (next) activate(next);
+      else {
+        editor.setModel(null);
+        $('editor').style.display = 'block';
+      }
     }
   }
   renderTabs();
@@ -739,17 +910,114 @@ function updateBreadcrumbs() {
 
 // ── Files ──
 
+function formatFileSize(bytes) {
+  if (typeof bytes !== 'number' || isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+let currentImgZoom = 1;
+function updateImgZoom(val) {
+  currentImgZoom = Math.max(0.1, Math.min(val, 10));
+  const img = $('image-preview-img');
+  if (img) {
+    img.style.maxWidth = currentImgZoom === 1 ? 'none' : '100%';
+    img.style.maxHeight = currentImgZoom === 1 ? 'none' : '100%';
+    img.style.transform = `scale(${currentImgZoom})`;
+  }
+  if ($('image-preview-zoom-val')) {
+    $('image-preview-zoom-val').textContent = `${Math.round(currentImgZoom * 100)}%`;
+  }
+}
+
+async function forceOpenAsText(path) {
+  try {
+    const text = await api.readFileForceText(path);
+    const existing = openFiles.get(path);
+    if (existing?.model) existing.model.dispose();
+    openFiles.set(path, {
+      type: 'text',
+      model: createModel(text, path),
+      viewState: null,
+      saved: text,
+    });
+    openFiles.get(path).model.onDidChangeContent(() => renderTabs());
+    activate(path);
+    setStatus(`Opened ${api.basename(path)} in text editor (UTF-8 lossy)`);
+  } catch (e) {
+    setStatus(`Failed to read as text: ${e}`, true);
+  }
+}
+
+async function chooseFile() {
+  try {
+    const picked = api.hasNativeFilePicker
+      ? await api.pickFiles(rootPath ?? undefined)
+      : await (async () => {
+          const res = await askFilePath(await api.quickRoots(), rootPath ?? '');
+          return res ? [res] : null;
+        })();
+    if (!picked || picked.length === 0) return;
+    for (const filePath of picked) {
+      await handleIncomingPath(filePath);
+    }
+  } catch (e) {
+    console.error('Error choosing file:', e);
+    setStatus(`Cannot open file: ${e}`, true);
+  }
+}
+
+async function handleIncomingPath(p) {
+  if (!p) return;
+  try {
+    const listing = await api.listDir(p);
+    if (listing && listing.entries) {
+      await openFolder(p);
+      await terminal.setCwd(p);
+      return;
+    }
+  } catch (_) {}
+  await openFile(p);
+}
+
 async function openFile(path) {
   try {
     if (!openFiles.has(path)) {
-      const content = await api.readFile(path);
-      openFiles.set(path, { model: createModel(content, path), viewState: null, saved: content });
-      openFiles.get(path).model.onDidChangeContent(() => {
-        renderTabs();
-        if (path === activePath && isMarkdownPreviewOpen && isMarkdownFile(path)) {
-          scheduleMarkdownPreviewUpdate();
-        }
-      });
+      let preview = null;
+      try {
+        preview = await api.readFilePreview(path);
+      } catch (errPreview) {
+        console.warn('readFilePreview fallback:', errPreview);
+      }
+
+      if (preview && (preview.is_image || preview.is_media)) {
+        openFiles.set(path, {
+          type: preview.is_image ? 'image' : 'media',
+          preview,
+          saved: '',
+        });
+      } else if (preview && preview.is_binary) {
+        openFiles.set(path, {
+          type: 'binary',
+          preview,
+          saved: '',
+        });
+      } else {
+        const content = preview?.text_content ?? (await api.readFile(path));
+        openFiles.set(path, {
+          type: 'text',
+          model: createModel(content, path),
+          viewState: null,
+          saved: content,
+        });
+        openFiles.get(path).model.onDidChangeContent(() => {
+          renderTabs();
+          if (path === activePath && isMarkdownPreviewOpen && isMarkdownFile(path)) {
+            scheduleMarkdownPreviewUpdate();
+          }
+        });
+      }
     }
     activate(path);
   } catch (e) {
@@ -761,18 +1029,88 @@ function activate(path) {
   if (activeWebUrl) {
     closeWebPreview(false);
   }
+  if (activeTerminalId) {
+    activeTerminalId = null;
+    if ($('editor-terminals')) $('editor-terminals').style.display = 'none';
+  }
   if (activePath && openFiles.has(activePath)) {
-    openFiles.get(activePath).viewState = editor.saveViewState();
+    const prev = openFiles.get(activePath);
+    if (prev?.model) {
+      prev.viewState = editor.saveViewState();
+    }
   }
   const entry = openFiles.get(path);
   if (!entry) return;
   activePath = path;
-  editor.setModel(entry.model);
-  if (entry.viewState) editor.restoreViewState(entry.viewState);
-  editor.focus();
+
+  const imgPane = $('image-preview-pane');
+  const binPane = $('binary-preview-pane');
+  const editorEl = $('editor');
+
+  if (entry.type === 'image') {
+    if (editorEl) editorEl.style.display = 'none';
+    if (binPane) binPane.style.display = 'none';
+    if (imgPane) {
+      imgPane.style.display = 'flex';
+      $('image-preview-title').textContent = api.basename(path);
+      $('image-preview-meta').textContent = `${entry.preview?.mime || 'image'} • ${formatFileSize(entry.preview?.size)}`;
+      const img = $('image-preview-img');
+      const mediaBox = $('media-preview-container');
+      if (img) {
+        img.src = entry.preview?.data_url || '';
+        img.style.display = 'block';
+        img.style.transform = 'none';
+      }
+      if (mediaBox) mediaBox.style.display = 'none';
+      if ($('image-preview-zoom-val')) $('image-preview-zoom-val').textContent = 'Fit';
+      currentImgZoom = 1;
+    }
+  } else if (entry.type === 'media') {
+    if (editorEl) editorEl.style.display = 'none';
+    if (binPane) binPane.style.display = 'none';
+    if (imgPane) {
+      imgPane.style.display = 'flex';
+      $('image-preview-title').textContent = api.basename(path);
+      $('image-preview-meta').textContent = `${entry.preview?.mime || 'media'} • ${formatFileSize(entry.preview?.size)}`;
+      const img = $('image-preview-img');
+      const mediaBox = $('media-preview-container');
+      if (img) img.style.display = 'none';
+      if (mediaBox) {
+        mediaBox.style.display = 'flex';
+        mediaBox.textContent = '';
+        const isVideo = entry.preview?.mime?.startsWith('video/');
+        const el = document.createElement(isVideo ? 'video' : 'audio');
+        el.controls = true;
+        el.autoplay = true;
+        el.src = entry.preview?.data_url || '';
+        mediaBox.appendChild(el);
+      }
+    }
+  } else if (entry.type === 'binary') {
+    if (editorEl) editorEl.style.display = 'none';
+    if (imgPane) imgPane.style.display = 'none';
+    if (binPane) {
+      binPane.style.display = 'flex';
+      $('binary-preview-title').textContent = api.basename(path);
+      $('binary-preview-meta').textContent = `${entry.preview?.mime || 'binary'} • ${formatFileSize(entry.preview?.size)}`;
+      $('binary-hex-dump').textContent = entry.preview?.hex_dump || '(Binary file)';
+    }
+  } else {
+    if (imgPane) imgPane.style.display = 'none';
+    if (binPane) binPane.style.display = 'none';
+    if (editorEl) editorEl.style.display = 'block';
+
+    if (entry.model) {
+      editor.setModel(entry.model);
+      if (entry.viewState) editor.restoreViewState(entry.viewState);
+      editor.focus();
+    }
+  }
+
   tree.setActive(path);
   renderTabs();
   updateStatus();
+  updateBreadcrumbs();
   persistOpenFiles();
 
   // Markdown preview support
@@ -789,13 +1127,14 @@ function activate(path) {
 
 function isDirty(path) {
   const entry = openFiles.get(path);
-  return entry ? entry.model.getValue() !== entry.saved : false;
+  if (!entry || entry.type !== 'text' || !entry.model) return false;
+  return entry.model.getValue() !== entry.saved;
 }
 
 async function saveFile(path = activePath) {
   if (!path) return;
   const entry = openFiles.get(path);
-  if (!entry) return;
+  if (!entry || entry.type !== 'text' || !entry.model) return;
   const content = entry.model.getValue();
   try {
     await api.writeFile(path, content);
@@ -818,7 +1157,7 @@ async function closeFile(path) {
     if (!discard) return;
   }
   const entry = openFiles.get(path);
-  entry?.model.dispose();
+  entry?.model?.dispose();
   openFiles.delete(path);
   persistOpenFiles();
 
@@ -826,12 +1165,18 @@ async function closeFile(path) {
     activePath = null;
     const next = [...openFiles.keys()].pop();
     if (next) activate(next);
-    else {
+    else if (openTerminals.size > 0) {
+      activateTerminalTab([...openTerminals.keys()].pop());
+    } else {
       if (isMarkdownPreviewOpen) toggleMarkdownPreview(false);
+      $('image-preview-pane').style.display = 'none';
+      $('binary-preview-pane').style.display = 'none';
+      $('editor').style.display = 'block';
       editor.setModel(null);
       tree.setActive(null);
       renderTabs();
       updateStatus();
+      updateBreadcrumbs();
     }
   } else {
     renderTabs();
@@ -846,7 +1191,7 @@ function renderTabs() {
   for (const path of openFiles.keys()) {
     const tab = document.createElement('div');
     tab.className = 'tab';
-    if (path === activePath && !activeWebUrl) tab.classList.add('active');
+    if (path === activePath && !activeWebUrl && !activeTerminalId) tab.classList.add('active');
     if (isDirty(path)) tab.classList.add('dirty');
     tab.title = path;
 
@@ -877,7 +1222,8 @@ function renderTabs() {
 
   if (activeWebUrl) {
     const tab = document.createElement('div');
-    tab.className = 'tab web-tab active';
+    tab.className = 'tab web-tab';
+    if (!activeTerminalId) tab.classList.add('active');
     tab.title = activeWebUrl;
 
     const icon = document.createElement('span');
@@ -907,6 +1253,50 @@ function renderTabs() {
     });
     bar.appendChild(tab);
   }
+
+  for (const [termId, term] of openTerminals.entries()) {
+    const tab = document.createElement('div');
+    tab.className = 'tab term-tab';
+    if (termId === activeTerminalId) tab.classList.add('active');
+    if (term.proxyConfig) tab.classList.add('proxy-tab');
+    tab.title = term.proxyConfig
+      ? `${term.title} (${term.proxyConfig.proxy_url})`
+      : term.title;
+
+    const icon = document.createElement('span');
+    icon.className = 'tab-icon';
+    icon.textContent = term.proxyConfig ? '🛡️' : '💻';
+    tab.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.textContent = term.title;
+    tab.appendChild(name);
+
+    const close = document.createElement('span');
+    close.className = 'close';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeTerminalTab(termId);
+    });
+    tab.appendChild(close);
+
+    tab.addEventListener('click', () => {
+      closeDiff();
+      if (activeWebUrl) closeWebPreview(false);
+      activateTerminalTab(termId);
+    });
+    bar.appendChild(tab);
+  }
+
+  const addTabBtn = document.createElement('button');
+  addTabBtn.className = 'tab-add-btn';
+  addTabBtn.title = 'New Terminal Tab (Ctrl+Shift+T)';
+  addTabBtn.textContent = '＋';
+  addTabBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    promptOpenTerminalTab();
+  });
+  bar.appendChild(addTabBtn);
 }
 
 function cycleTab(step) {
@@ -1053,6 +1443,48 @@ async function chooseFolder() {
 }
 
 $('btn-open').addEventListener('click', chooseFolder);
+$('btn-open-file')?.addEventListener('click', chooseFile);
+$('btn-open-file-sidebar')?.addEventListener('click', chooseFile);
+
+$('btn-img-zoom-in')?.addEventListener('click', () => updateImgZoom(currentImgZoom + 0.25));
+$('btn-img-zoom-out')?.addEventListener('click', () => updateImgZoom(currentImgZoom - 0.25));
+$('btn-img-zoom-reset')?.addEventListener('click', () => updateImgZoom(1));
+$('btn-img-zoom-fit')?.addEventListener('click', () => {
+  const img = $('image-preview-img');
+  if (img) {
+    img.style.maxWidth = '100%';
+    img.style.maxHeight = '100%';
+    img.style.transform = 'none';
+  }
+  currentImgZoom = 1;
+  if ($('image-preview-zoom-val')) $('image-preview-zoom-val').textContent = 'Fit';
+});
+$('btn-close-image-preview')?.addEventListener('click', () => activePath && closeFile(activePath));
+$('btn-close-binary-preview')?.addEventListener('click', () => activePath && closeFile(activePath));
+$('btn-binary-force-text')?.addEventListener('click', () => activePath && forceOpenAsText(activePath));
+
+// Drag & drop handlers
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  const overlay = $('drop-overlay');
+  if (overlay) overlay.style.display = 'flex';
+});
+window.addEventListener('dragleave', (e) => {
+  if (e.relatedTarget === null || e.clientX <= 0 || e.clientY <= 0) {
+    const overlay = $('drop-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+});
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const overlay = $('drop-overlay');
+  if (overlay) overlay.style.display = 'none';
+  if (e.dataTransfer?.files?.length) {
+    for (const f of e.dataTransfer.files) {
+      if (f.path) handleIncomingPath(f.path);
+    }
+  }
+});
 
 $('btn-up').addEventListener('click', async () => {
   if (!rootPath) return;
@@ -1547,6 +1979,11 @@ window.addEventListener('keydown', (e) => {
 
   // VS Code global shortcuts
   if (e.shiftKey) {
+    if (e.key.toLowerCase() === 't') {
+      e.preventDefault();
+      promptOpenTerminalTab();
+      return;
+    }
     if (e.key.toLowerCase() === 'g') {
       e.preventDefault();
       setSidebarView('git');
@@ -1568,11 +2005,15 @@ window.addEventListener('keydown', (e) => {
     '`': () => toggleTerminal(),
     b: () => setSidebar(!document.body.classList.contains('sidebar-open')),
     Tab: () => cycleTab(e.shiftKey ? -1 : 1),
+    o: () => chooseFile(),
+    O: () => chooseFile(),
   };
   const editorHandlers = {
     s: () => saveFile(),
     w: () => activePath && closeFile(activePath),
     p: () => quickOpen(),
+    o: () => chooseFile(),
+    O: () => chooseFile(),
     n: () => rootPath && createEntryUnder(rootPath),
     v: () => e.shiftKey && isMarkdownFile(activePath) && toggleMarkdownPreview(),
     V: () => isMarkdownFile(activePath) && toggleMarkdownPreview(),
@@ -1584,6 +2025,10 @@ window.addEventListener('keydown', (e) => {
     handler();
   }
 });
+
+// Terminal tab and proxy manager buttons
+$('btn-new-term-tab')?.addEventListener('click', () => promptOpenTerminalTab());
+$('btn-proxy-manager')?.addEventListener('click', () => showProxyManagerModal());
 
 // Toolbar buttons for preview & external links
 $('btn-md-preview')?.addEventListener('click', () => toggleMarkdownPreview());
@@ -1926,6 +2371,46 @@ async function init() {
       console.warn('Could not auto-open starter file:', e);
     }
   }
+
+  // Open files requested via CLI arguments or system triggers
+  try {
+    const cliTargets = await api.getCliOpenTargets();
+    if (cliTargets && cliTargets.length > 0) {
+      for (const target of cliTargets) {
+        await handleIncomingPath(target);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not read CLI targets:', e);
+  }
+
+  // Listen for files passed from single-instance second launch
+  api.onOpenFiles((paths) => {
+    if (Array.isArray(paths)) {
+      for (const p of paths) {
+        handleIncomingPath(p);
+      }
+    }
+  });
+
+  // Listen for native Tauri window drag & drop
+  api.onTauriDrop((paths) => {
+    if (Array.isArray(paths)) {
+      for (const p of paths) {
+        handleIncomingPath(p);
+      }
+    }
+  });
+
+  // Listen for Android incoming intent event
+  window.addEventListener('geko:open-external-file', (e) => {
+    if (e.detail?.path) {
+      handleIncomingPath(e.detail.path);
+    }
+  });
+  window.gekoOpenPath = (path) => {
+    if (path) handleIncomingPath(path);
+  };
 
   await updateLinuxEnvUI();
   await terminal.start(rootPath, currentShellMode);

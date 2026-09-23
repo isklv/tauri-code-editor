@@ -3,10 +3,14 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use base64::prelude::*;
 use notify::{recommended_watcher, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
+
+#[derive(Default)]
+pub struct CliTargets(pub Mutex<Vec<String>>);
 
 pub mod git;
 pub mod linux_env;
@@ -384,12 +388,241 @@ pub fn search_files(root: &Path, query: &str) -> Vec<String> {
     results
 }
 
+#[derive(Serialize)]
+pub struct FilePreview {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub is_binary: bool,
+    pub is_image: bool,
+    pub is_media: bool,
+    pub mime: String,
+    pub data_url: Option<String>,
+    pub text_content: Option<String>,
+    pub hex_dump: Option<String>,
+}
+
+fn detect_mime(path: &Path) -> &'static str {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        "m4a" => "audio/mp4",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
+        "mov" => "video/quicktime",
+        "pdf" => "application/pdf",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" | "mjs" | "cjs" => "application/javascript",
+        "ts" | "mts" | "cts" => "text/plain",
+        "md" | "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
+}
+
+fn format_hex_dump(bytes: &[u8]) -> String {
+    let mut out = String::new();
+    for (i, chunk) in bytes.chunks(16).enumerate() {
+        let offset = i * 16;
+        let mut hex_part = String::new();
+        let mut ascii_part = String::new();
+        for (j, &b) in chunk.iter().enumerate() {
+            if j == 8 {
+                hex_part.push(' ');
+            }
+            hex_part.push_str(&format!("{:02x} ", b));
+            if (32..=126).contains(&b) {
+                ascii_part.push(b as char);
+            } else {
+                ascii_part.push('.');
+            }
+        }
+        let padding = if chunk.len() < 16 {
+            let missing = 16 - chunk.len();
+            let extra_space = if chunk.len() <= 8 { 1 } else { 0 };
+            " ".repeat(missing * 3 + extra_space)
+        } else {
+            String::new()
+        };
+        out.push_str(&format!(
+            "{:08x}  {}{} |{}|\n",
+            offset, hex_part, padding, ascii_part
+        ));
+    }
+    out
+}
+
+#[tauri::command]
+fn read_file_preview(path: String) -> Result<FilePreview, String> {
+    let p = resolve(&path);
+    let meta = fs::metadata(&p).map_err(err("cannot stat file"))?;
+    let size = meta.len();
+    let name = p
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let mime = detect_mime(&p).to_string();
+    let is_image = mime.starts_with("image/");
+    let is_media = mime.starts_with("audio/") || mime.starts_with("video/");
+
+    let read_limit = if is_image || is_media {
+        30 * 1024 * 1024
+    } else {
+        MAX_FILE_SIZE
+    };
+
+    if size > read_limit {
+        return Err(format!(
+            "file is too large to load ({:.1} MiB, limit {:.0} MiB)",
+            size as f64 / (1024.0 * 1024.0),
+            read_limit as f64 / (1024.0 * 1024.0)
+        ));
+    }
+
+    let bytes = fs::read(&p).map_err(err("cannot read file"))?;
+    let is_binary = bytes.contains(&0) || is_image || is_media;
+
+    if is_image || is_media {
+        let b64 = BASE64_STANDARD.encode(&bytes);
+        let data_url = format!("data:{mime};base64,{b64}");
+        let text_content = if mime == "image/svg+xml" {
+            String::from_utf8(bytes).ok()
+        } else {
+            None
+        };
+        return Ok(FilePreview {
+            path,
+            name,
+            size,
+            is_binary: true,
+            is_image,
+            is_media,
+            mime,
+            data_url: Some(data_url),
+            text_content,
+            hex_dump: None,
+        });
+    }
+
+    if !is_binary {
+        let text = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            match String::from_utf8(bytes[3..].to_vec()) {
+                Ok(s) => s,
+                Err(_) => String::from_utf8_lossy(&bytes[3..]).into_owned(),
+            }
+        } else if bytes.starts_with(&[0xFF, 0xFE]) {
+            let u16_chars: Vec<u16> = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            String::from_utf16_lossy(&u16_chars)
+        } else if bytes.starts_with(&[0xFE, 0xFF]) {
+            let u16_chars: Vec<u16> = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
+            String::from_utf16_lossy(&u16_chars)
+        } else {
+            match String::from_utf8(bytes.clone()) {
+                Ok(s) => s,
+                Err(_) => String::from_utf8_lossy(&bytes).into_owned(),
+            }
+        };
+
+        return Ok(FilePreview {
+            path,
+            name,
+            size,
+            is_binary: false,
+            is_image: false,
+            is_media: false,
+            mime,
+            data_url: None,
+            text_content: Some(text),
+            hex_dump: None,
+        });
+    }
+
+    let sample = &bytes[..bytes.len().min(4096)];
+    let hex_dump = format_hex_dump(sample);
+
+    Ok(FilePreview {
+        path,
+        name,
+        size,
+        is_binary: true,
+        is_image: false,
+        is_media: false,
+        mime,
+        data_url: None,
+        text_content: None,
+        hex_dump: Some(hex_dump),
+    })
+}
+
+#[tauri::command]
+fn read_file_force_text(path: String) -> Result<String, String> {
+    let p = resolve(&path);
+    let bytes = fs::read(&p).map_err(err("cannot read file"))?;
+    let take_len = bytes.len().min(MAX_FILE_SIZE as usize);
+    let slice = &bytes[..take_len];
+    Ok(String::from_utf8_lossy(slice).into_owned())
+}
+
+#[tauri::command]
+fn get_cli_open_targets(state: State<'_, Arc<CliTargets>>, _app: AppHandle) -> Vec<String> {
+    let mut lock = state.0.lock().unwrap();
+    #[allow(unused_mut)]
+    let mut list = std::mem::take(&mut *lock);
+
+    #[cfg(target_os = "android")]
+    {
+        if let Ok(app_dir) = app.path().app_data_dir() {
+            let pending = app_dir.join("pending_open_file.txt");
+            if pending.exists() {
+                if let Ok(content) = fs::read_to_string(&pending) {
+                    for line in content.lines() {
+                        let trimmed = line.trim();
+                        if !trimmed.is_empty() && Path::new(trimmed).exists() {
+                            list.push(trimmed.to_string());
+                        }
+                    }
+                }
+                let _ = fs::remove_file(pending);
+            }
+        }
+    }
+
+    list
+}
+
 #[tauri::command]
 fn read_file_text(path: String) -> Result<String, String> {
     read_text_file(&resolve(&path))
 }
 
-/// Read a file for the editor, refusing anything too large or not plain UTF-8 text.
+/// Read a file for the editor, refusing anything too large or binary,
+/// but supporting BOMs and falling back gracefully to lossy UTF-8 for 8-bit encodings.
 pub fn read_text_file(path: &Path) -> Result<String, String> {
     let meta = fs::metadata(path).map_err(err("cannot stat file"))?;
     if meta.len() > MAX_FILE_SIZE {
@@ -400,10 +633,36 @@ pub fn read_text_file(path: &Path) -> Result<String, String> {
         ));
     }
     let bytes = fs::read(path).map_err(err("cannot read file"))?;
+
+    // Check BOMs
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return match String::from_utf8(bytes[3..].to_vec()) {
+            Ok(s) => Ok(s),
+            Err(_) => Ok(String::from_utf8_lossy(&bytes[3..]).into_owned()),
+        };
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        let u16_chars: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        return Ok(String::from_utf16_lossy(&u16_chars));
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        let u16_chars: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect();
+        return Ok(String::from_utf16_lossy(&u16_chars));
+    }
+
     if bytes.contains(&0) {
         return Err("file appears to be binary".into());
     }
-    String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8".to_string())
+    match String::from_utf8(bytes.clone()) {
+        Ok(s) => Ok(s),
+        Err(_) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+    }
 }
 
 #[tauri::command]
@@ -534,10 +793,41 @@ impl PtySession {
 }
 
 #[derive(Default)]
-struct Terminal {
-    session: Mutex<Option<PtySession>>,
+pub struct Terminal {
+    sessions: Mutex<std::collections::HashMap<u64, PtySession>>,
     session_id: std::sync::atomic::AtomicU64,
-    active_id: std::sync::atomic::AtomicU64,
+}
+
+#[derive(Serialize, Clone)]
+struct PtyOutputPayload {
+    id: u64,
+    bytes: Vec<u8>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+pub struct ProxyOptions {
+    pub proxy_url: Option<String>,
+    pub isolate_env: Option<bool>,
+    pub isolated_home: Option<bool>,
+}
+
+fn apply_proxy_to_cmd(cmd: &mut CommandBuilder, proxy_url: Option<&str>) {
+    if let Some(proxy) = proxy_url.filter(|s| !s.trim().is_empty()) {
+        let clean = proxy.trim();
+        let socks_url = if clean.starts_with("socks5://") {
+            clean.replacen("socks5://", "socks5h://", 1)
+        } else {
+            clean.to_string()
+        };
+        cmd.env("ALL_PROXY", &socks_url);
+        cmd.env("all_proxy", &socks_url);
+        cmd.env("HTTP_PROXY", clean);
+        cmd.env("http_proxy", clean);
+        cmd.env("HTTPS_PROXY", clean);
+        cmd.env("https_proxy", clean);
+        cmd.env("NO_PROXY", "localhost,127.0.0.1,::1");
+        cmd.env("no_proxy", "localhost,127.0.0.1,::1");
+    }
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -593,6 +883,7 @@ pub fn spawn_shell(
     cwd: Option<&str>,
     cols: u16,
     rows: u16,
+    proxy_url: Option<&str>,
 ) -> Result<(PtySession, Box<dyn Read + Send>), String> {
     let mut cmd = CommandBuilder::new(default_shell());
     if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
@@ -601,6 +892,7 @@ pub fn spawn_shell(
         cmd.env("HOME", dir);
     }
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
     // An Android app process usually starts without PATH, which leaves the
     // shell unable to find even the toybox applets.
     #[cfg(target_os = "android")]
@@ -608,6 +900,7 @@ pub fn spawn_shell(
         "PATH",
         "/system/bin:/system/xbin:/vendor/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin",
     );
+    apply_proxy_to_cmd(&mut cmd, proxy_url);
 
     spawn_with_command(cmd, cols, rows)
 }
@@ -618,6 +911,7 @@ pub fn spawn_app_shell(
     cwd: Option<&str>,
     cols: u16,
     rows: u16,
+    proxy_url: Option<&str>,
 ) -> Result<(PtySession, Box<dyn Read + Send>), String> {
     let explicit_alpine = matches!(shell_mode, Some("alpine"));
     let use_alpine = match shell_mode {
@@ -627,7 +921,7 @@ pub fn spawn_app_shell(
     };
 
     if use_alpine {
-        match linux_env::build_proot_command(app, cwd) {
+        match linux_env::build_proot_command(app, cwd, proxy_url) {
             Some(cmd) => match spawn_with_command(cmd, cols, rows) {
                 Ok(res) => {
                     linux_env::emit_log(app, "started the Alpine shell");
@@ -648,7 +942,7 @@ pub fn spawn_app_shell(
         }
     }
 
-    spawn_shell(cwd, cols, rows)
+    spawn_shell(cwd, cols, rows, proxy_url)
 }
 
 /// Tell the webview that the Alpine shell was requested but the native shell is
@@ -691,19 +985,16 @@ fn pty_start(
     cols: u16,
     rows: u16,
     shell_mode: Option<String>,
+    proxy: Option<ProxyOptions>,
 ) -> Result<u64, String> {
-    // Generate a fresh session ID before killing old session
     let id = terminal
         .session_id
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
         + 1;
-    terminal
-        .active_id
-        .store(id, std::sync::atomic::Ordering::SeqCst);
-    kill_session(&terminal);
 
+    let proxy_url = proxy.as_ref().and_then(|p| p.proxy_url.as_deref());
     let (session, mut reader) =
-        spawn_app_shell(&app, shell_mode.as_deref(), cwd.as_deref(), cols, rows)?;
+        spawn_app_shell(&app, shell_mode.as_deref(), cwd.as_deref(), cols, rows, proxy_url)?;
 
     let emitter = app.clone();
     let term_state = terminal.inner().clone();
@@ -713,57 +1004,115 @@ fn pty_start(
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if emitter.emit("pty://output", &buf[..n]).is_err() {
+                    let payload = PtyOutputPayload {
+                        id,
+                        bytes: buf[..n].to_vec(),
+                    };
+                    if emitter.emit("pty://output", &payload).is_err() {
                         break;
                     }
                 }
             }
         }
-        // Only emit exit if this session is STILL the active session (not replaced by a newer session and not killed)
-        if term_state
-            .active_id
-            .load(std::sync::atomic::Ordering::SeqCst)
-            == id
-        {
-            let _ = emitter.emit("pty://exit", id);
-        }
+        term_state.sessions.lock().unwrap().remove(&id);
+        let _ = emitter.emit("pty://exit", id);
     });
 
-    *terminal.session.lock().unwrap() = Some(session);
+    terminal.sessions.lock().unwrap().insert(id, session);
     Ok(id)
 }
 
 #[tauri::command]
-fn pty_write(terminal: State<'_, Arc<Terminal>>, data: String) -> Result<(), String> {
-    let mut guard = terminal.session.lock().unwrap();
-    guard
-        .as_mut()
-        .ok_or("terminal is not running")?
-        .write(&data)
+fn pty_write(
+    terminal: State<'_, Arc<Terminal>>,
+    id: Option<u64>,
+    data: String,
+) -> Result<(), String> {
+    let mut guard = terminal.sessions.lock().unwrap();
+    let session = if let Some(id) = id {
+        guard.get_mut(&id).ok_or("terminal session not found")?
+    } else {
+        guard.values_mut().next().ok_or("terminal is not running")?
+    };
+    session.write(&data)
 }
 
 #[tauri::command]
-fn pty_resize(terminal: State<'_, Arc<Terminal>>, cols: u16, rows: u16) -> Result<(), String> {
-    let guard = terminal.session.lock().unwrap();
-    match guard.as_ref() {
-        Some(session) => session.resize(cols, rows),
-        None => Ok(()), // resizing a terminal that is not running is a no-op
+fn pty_resize(
+    terminal: State<'_, Arc<Terminal>>,
+    id: Option<u64>,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let guard = terminal.sessions.lock().unwrap();
+    if let Some(id) = id {
+        if let Some(session) = guard.get(&id) {
+            session.resize(cols, rows)?;
+        }
+    } else if let Some(session) = guard.values().next() {
+        session.resize(cols, rows)?;
     }
-}
-
-fn kill_session(terminal: &Terminal) {
-    if let Some(mut session) = terminal.session.lock().unwrap().take() {
-        session.kill();
-    }
-}
-
-#[tauri::command]
-fn pty_kill(terminal: State<'_, Arc<Terminal>>) -> Result<(), String> {
-    terminal
-        .active_id
-        .store(0, std::sync::atomic::Ordering::SeqCst);
-    kill_session(&terminal);
     Ok(())
+}
+
+#[tauri::command]
+fn pty_kill(terminal: State<'_, Arc<Terminal>>, id: Option<u64>) -> Result<(), String> {
+    let mut guard = terminal.sessions.lock().unwrap();
+    if let Some(id) = id {
+        if let Some(mut session) = guard.remove(&id) {
+            session.kill();
+        }
+    } else {
+        for (_, mut session) in guard.drain() {
+            session.kill();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn test_proxy_connection(proxy_url: String) -> Result<bool, String> {
+    let raw = proxy_url.trim();
+    if raw.is_empty() {
+        return Err("Proxy URL is empty".into());
+    }
+
+    let without_proto = if let Some(idx) = raw.find("://") {
+        &raw[idx + 3..]
+    } else {
+        raw
+    };
+    let without_auth = if let Some(idx) = without_proto.find('@') {
+        &without_proto[idx + 1..]
+    } else {
+        without_proto
+    };
+    let host_port = without_auth.split('/').next().unwrap_or(without_auth).trim();
+    if host_port.is_empty() {
+        return Err("Empty host in proxy URL".into());
+    }
+
+    let (host, port) = if let Some((h, p_str)) = host_port.rsplit_once(':') {
+        let p: u16 = p_str.parse().map_err(|_| format!("Invalid port in proxy URL: {p_str}"))?;
+        (h, p)
+    } else {
+        let default_port = if raw.starts_with("socks") { 1080 } else { 8080 };
+        (host_port, default_port)
+    };
+
+    use std::net::ToSocketAddrs;
+    let addrs = format!("{host}:{port}")
+        .to_socket_addrs()
+        .map_err(|e| format!("Cannot resolve host {host}:{port}: {e}"))?;
+
+    let timeout = std::time::Duration::from_secs(3);
+    for addr in addrs {
+        if std::net::TcpStream::connect_timeout(&addr, timeout).is_ok() {
+            return Ok(true);
+        }
+    }
+
+    Err(format!("Could not connect to proxy server at {host}:{port}"))
 }
 
 #[tauri::command]
@@ -968,12 +1317,39 @@ fn open_external_url(url: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init());
+
+    #[cfg(not(target_os = "android"))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            let mut targets = Vec::new();
+            let cwd_path = PathBuf::from(&cwd);
+            for arg in argv.into_iter().skip(1) {
+                if arg.starts_with('-') {
+                    continue;
+                }
+                let p = PathBuf::from(&arg);
+                let full = if p.is_absolute() { p } else { cwd_path.join(p) };
+                targets.push(full.to_string_lossy().into_owned());
+            }
+            if !targets.is_empty() {
+                let _ = app.emit("open-files", &targets);
+            }
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }));
+    }
+
+    builder
         .manage(Arc::new(Terminal::default()))
         .manage(Arc::new(FsWatcher::default()))
         .manage(Arc::new(linux_env::InstallState::default()))
         .manage(Arc::new(lsp::LspManager::default()))
+        .manage(Arc::new(CliTargets::default()))
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             open_external_url,
@@ -982,6 +1358,9 @@ pub fn run() {
             list_dir,
             find_files,
             read_file_text,
+            read_file_preview,
+            read_file_force_text,
+            get_cli_open_targets,
             write_file_text,
             create_entry,
             rename_entry,
@@ -992,6 +1371,7 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            test_proxy_connection,
             get_linux_env_status,
             install_linux_env,
             get_alpine_config,
@@ -1019,6 +1399,25 @@ pub fn run() {
             lsp::lsp_supported,
         ])
         .setup(|app| {
+            // Collect initial command-line arguments to open files
+            let cli_targets = app.state::<Arc<CliTargets>>();
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let mut targets = Vec::new();
+            for arg in args {
+                if arg.starts_with('-') {
+                    continue;
+                }
+                let p = PathBuf::from(&arg);
+                let full = if p.is_absolute() { p } else { cwd.join(p) };
+                targets.push(full.to_string_lossy().into_owned());
+            }
+            if !targets.is_empty() {
+                if let Ok(mut lock) = cli_targets.0.lock() {
+                    *lock = targets;
+                }
+            }
+
             // The Alpine environment is what provides apk, git and compilers, so
             // it is installed on first launch instead of on request. Driving it
             // from here keeps it working even if the webview never gets there.

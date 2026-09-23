@@ -28,6 +28,15 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["txt", "text", "md", "markdown", "log", "rs", "js", "ts", "jsx", "tsx", "html", "htm", "css", "scss", "json", "xml", "svg", "yaml", "yml", "toml", "ini", "conf", "cfg", "sh", "bash", "zsh", "py", "c", "h", "cpp", "hpp", "java", "kt", "go", "sql", "*"],
+        "name": "All Files",
+        "description": "All files",
+        "role": "Editor",
+        "mimeType": "text/plain"
+      }
+    ],
     "android": {
       "minSdkVersion": 24,
       "autoIncrementVersionCode": true

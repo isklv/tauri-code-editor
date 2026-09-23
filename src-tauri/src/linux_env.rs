@@ -861,7 +861,11 @@ pub fn ready_paths(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
 }
 
 /// Build CommandBuilder for PRoot executing an Alpine Linux login shell.
-pub fn build_proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<CommandBuilder> {
+pub fn build_proot_command(
+    app: &AppHandle,
+    cwd: Option<&str>,
+    proxy_url: Option<&str>,
+) -> Option<CommandBuilder> {
     let (proot, rootfs) = ready_paths(app)?;
 
     let mut cmd = CommandBuilder::new(proot);
@@ -876,6 +880,7 @@ pub fn build_proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command
     cmd.cwd(host_start_dir(env_dir(app).ok(), cwd));
 
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
     cmd.env("HOME", "/root");
     cmd.env("TMPDIR", "/tmp");
     cmd.env("PATH", GUEST_PATH);
@@ -883,6 +888,23 @@ pub fn build_proot_command(app: &AppHandle, cwd: Option<&str>) -> Option<Command
     if let Ok(tmp) = proot_tmp_dir(app) {
         let _ = fs::create_dir_all(&tmp);
         cmd.env("PROOT_TMP_DIR", tmp.to_string_lossy().into_owned());
+    }
+
+    if let Some(proxy) = proxy_url.filter(|s| !s.trim().is_empty()) {
+        let clean = proxy.trim();
+        let socks_url = if clean.starts_with("socks5://") {
+            clean.replacen("socks5://", "socks5h://", 1)
+        } else {
+            clean.to_string()
+        };
+        cmd.env("ALL_PROXY", &socks_url);
+        cmd.env("all_proxy", &socks_url);
+        cmd.env("HTTP_PROXY", clean);
+        cmd.env("http_proxy", clean);
+        cmd.env("HTTPS_PROXY", clean);
+        cmd.env("https_proxy", clean);
+        cmd.env("NO_PROXY", "localhost,127.0.0.1,::1");
+        cmd.env("no_proxy", "localhost,127.0.0.1,::1");
     }
 
     // Login shell

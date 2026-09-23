@@ -235,7 +235,7 @@ jobs:
             --notes "Automatic build of ${GITHUB_SHA:0:7} (version \`${{ steps.versioning.outputs.version_name }}\`, versionCode \`${{ steps.versioning.outputs.version_code }}\`). Install with \`adb install -r\` or open this page on the phone and tap the APK."
 
       - name: Attach the APK to the tagged release
-        if: github.ref_type == 'tag' && steps.signing.outputs.signed == 'true'
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

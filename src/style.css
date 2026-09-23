@@ -2337,4 +2337,477 @@ button.tool.primary:hover {
   border-bottom-color: #2aafff;
 }
 
+/* ── Image & Media Preview Pane ── */
+.image-preview-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.image-preview-toolbar,
+.binary-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  background: var(--sidebar-bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.image-preview-title,
+.binary-preview-title {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.image-preview-meta,
+.binary-preview-meta {
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.image-preview-zoom {
+  font-size: 12px;
+  font-family: var(--mono-font);
+  color: var(--fg-dim);
+  min-width: 40px;
+  text-align: center;
+}
+
+.image-preview-viewport {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+  background-color: #1e1e1e;
+  background-image: 
+    linear-gradient(45deg, #252525 25%, transparent 25%),
+    linear-gradient(-45deg, #252525 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #252525 75%),
+    linear-gradient(-45deg, transparent 75%, #252525 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+.image-preview-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease-out;
+}
+
+.media-preview-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 720px;
+}
+
+.media-preview-container audio,
+.media-preview-container video {
+  max-width: 100%;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+}
+
+/* ── Binary / Hex Preview Pane ── */
+.binary-preview-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.binary-preview-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 16px 20px;
+  gap: 16px;
+}
+
+.binary-notice {
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid #ffaa00;
+  border-radius: 4px;
+  padding: 12px 16px;
+}
+
+.binary-notice-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg);
+  margin-bottom: 4px;
+}
+
+.binary-notice-desc {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.binary-hex-dump {
+  margin: 0;
+  padding: 14px 16px;
+  background: #141414;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #cfd8dc;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ── Drag & Drop Overlay ── */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 25, 47, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-overlay-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 48px;
+  border: 2px dashed #3a86ff;
+  border-radius: 12px;
+  background: rgba(20, 35, 60, 0.9);
+  color: #ffffff;
+  pointer-events: none;
+}
+
+.drop-overlay-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-overlay-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* ── Editor Terminals & Terminal Tabs ── */
+
+.editor-terminals {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.editor-term-pane {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  overflow: hidden;
+}
+
+.editor-term-pane .xterm {
+  height: 100%;
+  padding: 8px 12px;
+}
+
+.tab.term-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab.term-tab.proxy-tab {
+  border-bottom: 2px solid #23d18b;
+}
+
+.tab.term-tab.proxy-tab .tab-icon {
+  color: #23d18b;
+}
+
+.tab-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 35px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tab-add-btn:hover {
+  background: #252525;
+  color: var(--fg);
+}
+
+/* ── Proxy Manager & Launcher Modals ── */
+
+.proxy-launcher-modal {
+  width: min(480px, 94vw);
+}
+
+.proxy-manager-modal {
+  width: min(540px, 95vw);
+}
+
+.modal-subtitle {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-top: -6px;
+  margin-bottom: 4px;
+}
+
+.proxy-modal-form, .proxy-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.col-3 { flex: 3; }
+.col-4 { flex: 4; }
+.col-5 { flex: 5; }
+.col-6 { flex: 6; }
+
+.form-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.modal-select {
+  background: #3c3c3c;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.modal-select:focus {
+  border-color: var(--accent);
+}
+
+.checkbox-group {
+  margin-top: 2px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  cursor: pointer;
+}
+
+.proxy-info-hint {
+  background: #1c2733;
+  border-left: 3px solid #23d18b;
+  border-radius: 4px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hint-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #23d18b;
+}
+
+.hint-text {
+  font-size: 11px;
+  color: #c0c6cf;
+  line-height: 1.4;
+}
+
+.hint-text code {
+  background: #00000044;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #61afef;
+  font-family: monospace;
+}
+
+.proxy-profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px;
+  background: #181818;
+}
+
+.proxy-empty-state {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+
+.proxy-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #202020;
+  border-radius: 4px;
+  border: 1px solid #2d2d2d;
+}
+
+.proxy-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.proxy-item-name {
+  font-size: 13px;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.proxy-item-detail {
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-family: monospace;
+}
+
+.proxy-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.proxy-badge.socks5 {
+  background: #1b4931;
+  color: #23d18b;
+}
+
+.proxy-badge.http, .proxy-badge.https {
+  background: #1c3653;
+  color: #4daafc;
+}
+
+.proxy-item-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tool.small {
+  padding: 3px 8px;
+  font-size: 11px;
+  height: 24px;
+}
+
+.tool.small.success {
+  background: #1e5e3a;
+  color: #a7f3d0;
+}
+
+.tool.small.error {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.tool.small.danger {
+  color: #f87171;
+}
+
+.tool.small.danger:hover {
+  background: #451a1a;
+}
+
+.modal-actions.space-between {
+  justify-content: space-between;
+}
+
+.action-buttons-right {
+  display: flex;
+  gap: 8px;
+}
+
+.form-feedback {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.form-feedback.success {
+  background: #143823;
+  color: #34d399;
+}
+
+.form-feedback.error {
+  background: #451a1a;
+  color: #f87171;
+}
+
+.form-feedback.info {
+  background: #1c3653;
+  color: #60a5fa;
+}
+
 

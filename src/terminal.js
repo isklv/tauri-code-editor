@@ -81,8 +81,16 @@ export class TerminalPanel {
     this.sessionId = null;
     this.starting = false;
     this.restartListener = null;
+    this.proxy = null;
+    this.unsubs = [];
 
-    onPtyOutput((bytes) => this.term.write(bytes));
+    onPtyOutput((bytes, id) => {
+      if (id && this.sessionId && id !== this.sessionId) {
+        return;
+      }
+      this.term.write(bytes);
+    }).then((unsub) => this.unsubs.push(unsub));
+
     onPtyExit((exitId) => {
       // Ignore exit event if a new session is currently starting or belongs to an old session
       if (this.starting) {
@@ -101,9 +109,9 @@ export class TerminalPanel {
           this.restartListener.dispose();
           this.restartListener = null;
         }
-        this.start(this.cwd);
+        this.start(this.cwd, this.shellMode, this.proxy);
       });
-    });
+    }).then((unsub) => this.unsubs.push(unsub));
   }
 
   /** Send input to the shell, applying a pending Ctrl from the helper bar. */
@@ -117,7 +125,7 @@ export class TerminalPanel {
         if (code >= 64 && code < 96) data = String.fromCharCode(code & 0x1f);
       }
     }
-    if (this.running) ptyWrite(data).catch((e) => this.writeError(e));
+    if (this.running) ptyWrite(data, this.sessionId).catch((e) => this.writeError(e));
     else this.term.write(data.replace(/\r/g, '\r\n')); // local echo with no shell attached
   }
 
@@ -207,11 +215,11 @@ export class TerminalPanel {
     } catch {
       return; // xterm throws while the panel is mid-animation; the next observation retries
     }
-    if (this.running) ptyResize(this.term.cols, this.term.rows).catch(() => {});
+    if (this.running) ptyResize(this.term.cols, this.term.rows, this.sessionId).catch(() => {});
   }
 
   /** Spawn (or respawn) the shell. Safe to call repeatedly. */
-  async start(cwd, shellMode) {
+  async start(cwd, shellMode, proxy = null) {
     if (this.restartListener) {
       this.restartListener.dispose();
       this.restartListener = null;
@@ -219,6 +227,7 @@ export class TerminalPanel {
     this.starting = true;
     this.cwd = cwd ?? this.cwd;
     if (shellMode !== undefined) this.shellMode = shellMode;
+    if (proxy !== undefined) this.proxy = proxy;
     if (!isTauri) {
       this.term.writeln('\x1b[33mTerminal requires the desktop app (npm run tauri:dev).\x1b[0m');
       this.starting = false;
@@ -226,7 +235,13 @@ export class TerminalPanel {
     }
     this.fit();
     try {
-      this.sessionId = await ptyStart(this.cwd, this.term.cols, this.term.rows, this.shellMode ?? null);
+      this.sessionId = await ptyStart(
+        this.cwd,
+        this.term.cols,
+        this.term.rows,
+        this.shellMode ?? null,
+        this.proxy ?? null,
+      );
       this.running = true;
       return true;
     } catch (e) {
@@ -250,22 +265,34 @@ export class TerminalPanel {
         const sub = target.split('/alpine/root')[1] || '';
         target = '/root' + sub;
       }
-      await ptyWrite(` cd ${JSON.stringify(target)}\n`).catch(() => {});
+      await ptyWrite(` cd ${JSON.stringify(target)}\n`, this.sessionId).catch(() => {});
     } else {
-      await this.start(cwd, this.shellMode);
+      await this.start(cwd, this.shellMode, this.proxy);
     }
   }
 
   /** Returns whether a shell is attached, so callers can fall back to another one. */
-  async restart(cwd, shellMode) {
+  async restart(cwd, shellMode, proxy) {
     this.term.reset();
     this.running = false;
-    return this.start(cwd, shellMode);
+    return this.start(cwd, shellMode, proxy ?? this.proxy);
   }
 
   async dispose() {
-    this.resizeObserver.disconnect();
-    await ptyKill().catch(() => {});
+    this.resizeObserver?.disconnect();
+    for (const unsub of this.unsubs) {
+      try {
+        unsub();
+      } catch {}
+    }
+    this.unsubs = [];
+    if (this.restartListener) {
+      this.restartListener.dispose();
+      this.restartListener = null;
+    }
+    if (this.sessionId) {
+      await ptyKill(this.sessionId).catch(() => {});
+    }
     this.term.dispose();
   }
 
