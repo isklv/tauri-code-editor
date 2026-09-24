@@ -47,10 +47,10 @@ document.getElementById('app').innerHTML = `
       <div class="sidebar-view" id="view-explorer">
         <div class="sidebar-header">
           <span class="title" id="root-name">Explorer</span>
-          <button class="icon-button" id="btn-up" title="Go to parent folder">↑</button>
-          <button class="icon-button" id="btn-open-file-sidebar" title="Open file (Ctrl+O)">📄</button>
-          <button class="icon-button" id="btn-new-file" title="New file">＋</button>
-          <button class="icon-button" id="btn-refresh" title="Refresh">⟳</button>
+          <button class="icon-button" id="btn-up" title="Go to parent folder">${SVG_ICONS.arrowUp}</button>
+          <button class="icon-button" id="btn-open-file-sidebar" title="Open file (Ctrl+O)">${SVG_ICONS.filePlus}</button>
+          <button class="icon-button" id="btn-new-file" title="New file">${SVG_ICONS.plus}</button>
+          <button class="icon-button" id="btn-refresh" title="Refresh">${SVG_ICONS.refresh}</button>
         </div>
         <div class="sidebar-path" id="root-path"></div>
         <div class="file-tree" id="file-tree"></div>
@@ -60,7 +60,7 @@ document.getElementById('app').innerHTML = `
       <div class="sidebar-view" id="view-search" style="display:none;">
         <div class="sidebar-header">
           <span class="title">Search Files</span>
-          <button class="icon-button" id="btn-refresh-search" title="Clear search">×</button>
+          <button class="icon-button" id="btn-refresh-search" title="Clear search">${SVG_ICONS.close}</button>
         </div>
         <div class="search-panel">
           <input type="text" class="search-input" id="search-query" placeholder="Type filename to search..." />
@@ -97,10 +97,6 @@ document.getElementById('app').innerHTML = `
             <span class="topbar-ws-title" id="topbar-root-name">Open Folder</span>
             <span class="topbar-ws-chevron">${SVG_ICONS.chevronDown}</span>
           </button>
-          <button class="topbar-workspace-btn" id="btn-open-file" title="Open file (Ctrl+O)" style="margin-left: 2px;">
-            <span class="topbar-ws-icon">${SVG_ICONS.file}</span>
-            <span class="topbar-ws-title">Open File</span>
-          </button>
         </div>
 
         <div class="topbar-center">
@@ -112,26 +108,18 @@ document.getElementById('app').innerHTML = `
         </div>
 
         <div class="topbar-right">
-          <button class="icon-button topbar-btn" id="btn-md-preview" title="Markdown Preview (Ctrl+Shift+V)" style="display:none;">
-            📖
-          </button>
           <button class="icon-button topbar-btn" id="btn-save" title="Save file (Ctrl+S)">
             ${SVG_ICONS.save}
           </button>
-          <button class="icon-button topbar-btn" id="btn-new-term-tab" title="New Terminal Tab (Ctrl+Shift+T)">
-            ＋💻
-          </button>
-          <button class="icon-button topbar-btn" id="btn-proxy-manager" title="Proxy Manager">
-            🛡️
+          <button class="topbar-proxy-badge" id="btn-proxy-manager" title="Proxy Manager (click to configure)">
+            <span class="proxy-badge-icon">${SVG_ICONS.shield}</span>
+            <span class="proxy-badge-text" id="topbar-proxy-text">Proxy</span>
           </button>
           <button class="icon-button topbar-btn" id="btn-toggle-terminal" title="Toggle Terminal (Ctrl+\`)">
             ${SVG_ICONS.terminal}
           </button>
-          <button class="icon-button topbar-btn" id="btn-clone-toolbar" title="GitHub Clone & Repos">
-            ${SVG_ICONS.github}
-          </button>
           <button class="topbar-linux-badge not-installed" id="topbar-linux-badge" title="Linux Environment">
-            🐧 <span id="topbar-linux-text">Linux</span>
+            <span class="linux-badge-icon">${SVG_ICONS.linux}</span> <span id="topbar-linux-text">Linux</span>
           </button>
         </div>
       </header>
@@ -148,25 +136,25 @@ document.getElementById('app').innerHTML = `
           <div class="markdown-preview-header">
             <span class="markdown-preview-title">Markdown Preview</span>
             <span class="spacer"></span>
-            <button class="icon-button" id="btn-close-md-preview" title="Close Preview">×</button>
+            <button class="icon-button" id="btn-close-md-preview" title="Close Preview">${SVG_ICONS.close}</button>
           </div>
           <div class="markdown-body" id="markdown-body"></div>
         </div>
         <div class="diff-editor" id="diff-editor" style="display:none;">
           <div class="diff-header">
             <span class="diff-title" id="diff-title">Diff View</span>
-            <button class="icon-button" id="btn-close-diff" title="Close Diff View">×</button>
+            <button class="icon-button" id="btn-close-diff" title="Close Diff View">${SVG_ICONS.close}</button>
           </div>
           <div class="diff-host" id="diff-host"></div>
         </div>
         <div class="web-preview-pane" id="web-preview-pane" style="display:none;">
           <div class="web-preview-toolbar">
-            <button class="icon-button" id="btn-web-back" title="Back">◀</button>
-            <button class="icon-button" id="btn-web-forward" title="Forward">▶</button>
-            <button class="icon-button" id="btn-web-reload" title="Reload">⟳</button>
+            <button class="icon-button" id="btn-web-back" title="Back">${SVG_ICONS.arrowLeft}</button>
+            <button class="icon-button" id="btn-web-forward" title="Forward">${SVG_ICONS.arrowRight}</button>
+            <button class="icon-button" id="btn-web-reload" title="Reload">${SVG_ICONS.refresh}</button>
             <input type="text" class="web-preview-url" id="web-preview-url" readonly />
-            <button class="icon-button" id="btn-web-external" title="Open in External Browser">↗</button>
-            <button class="icon-button" id="btn-web-close" title="Close Web Tab">×</button>
+            <button class="icon-button" id="btn-web-external" title="Open in External Browser">${SVG_ICONS.externalLink}</button>
+            <button class="icon-button" id="btn-web-close" title="Close Web Tab">${SVG_ICONS.close}</button>
           </div>
           <iframe class="web-preview-iframe" id="web-preview-iframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
         </div>
@@ -175,12 +163,12 @@ document.getElementById('app').innerHTML = `
             <span class="image-preview-title" id="image-preview-title">Image</span>
             <span class="image-preview-meta" id="image-preview-meta"></span>
             <span class="spacer"></span>
-            <button class="tool" id="btn-img-zoom-out" title="Zoom out">-</button>
+            <button class="tool" id="btn-img-zoom-out" title="Zoom out">${SVG_ICONS.minus}</button>
             <span class="image-preview-zoom" id="image-preview-zoom-val">100%</span>
-            <button class="tool" id="btn-img-zoom-in" title="Zoom in">+</button>
+            <button class="tool" id="btn-img-zoom-in" title="Zoom in">${SVG_ICONS.plus}</button>
             <button class="tool" id="btn-img-zoom-reset" title="Actual size">1:1</button>
             <button class="tool" id="btn-img-zoom-fit" title="Fit to screen">Fit</button>
-            <button class="icon-button" id="btn-close-image-preview" title="Close Preview">×</button>
+            <button class="icon-button" id="btn-close-image-preview" title="Close Preview">${SVG_ICONS.close}</button>
           </div>
           <div class="image-preview-viewport" id="image-preview-viewport">
             <img id="image-preview-img" class="image-preview-img" alt="Preview" />
@@ -193,7 +181,7 @@ document.getElementById('app').innerHTML = `
             <span class="binary-preview-meta" id="binary-preview-meta"></span>
             <span class="spacer"></span>
             <button class="tool primary" id="btn-binary-force-text" title="Try opening in text editor (UTF-8 lossy)">Open as Text</button>
-            <button class="icon-button" id="btn-close-binary-preview" title="Close">×</button>
+            <button class="icon-button" id="btn-close-binary-preview" title="Close">${SVG_ICONS.close}</button>
           </div>
           <div class="binary-preview-content">
             <div class="binary-notice">
@@ -212,19 +200,19 @@ document.getElementById('app').innerHTML = `
       <section class="panel hidden" id="panel">
         <div class="panel-header">
           <span>Terminal</span>
-          <button class="panel-pill" id="btn-install-linux" title="Install Alpine Linux + apk package manager">🐧 Install Linux</button>
+          <button class="panel-pill" id="btn-install-linux" title="Install Alpine Linux + apk package manager"><span style="display:inline-flex;align-items:center;gap:4px;">${SVG_ICONS.linux} Install Linux</span></button>
           <select class="panel-select" id="select-shell" style="display:none" title="Choose shell environment">
-            <option value="alpine">🐧 Alpine Linux (apk)</option>
-            <option value="native">📱 Native Shell</option>
-            <option value="settings">⚙ Alpine Settings…</option>
-            <option value="reinstall">🔄 Reinstall Linux</option>
+            <option value="alpine">Alpine Linux (apk)</option>
+            <option value="native">Native Shell</option>
+            <option value="settings">Alpine Settings…</option>
+            <option value="reinstall">Reinstall Linux</option>
           </select>
-          <button class="icon-button" id="btn-alpine-settings" title="Alpine Linux version & settings" style="display:none">⚙</button>
+          <button class="icon-button" id="btn-alpine-settings" title="Alpine Linux version & settings" style="display:none">${SVG_ICONS.settings}</button>
           <span class="spacer"></span>
-          <button class="icon-button" id="btn-linux-log" title="Show Linux setup log">🧾</button>
-          <button class="icon-button" id="btn-term-keys" title="Toggle on-screen keys">⌨</button>
-          <button class="icon-button" id="btn-restart-terminal" title="Restart shell">⟳</button>
-          <button class="icon-button" id="btn-close-terminal" title="Hide terminal">×</button>
+          <button class="icon-button" id="btn-linux-log" title="Show Linux setup log">${SVG_ICONS.fileText}</button>
+          <button class="icon-button" id="btn-term-keys" title="Toggle on-screen keys">${SVG_ICONS.keyboard}</button>
+          <button class="icon-button" id="btn-restart-terminal" title="Restart shell">${SVG_ICONS.refresh}</button>
+          <button class="icon-button" id="btn-close-terminal" title="Hide terminal">${SVG_ICONS.close}</button>
         </div>
         <div class="linux-progress" id="linux-progress" style="display:none">
           <span class="linux-progress-text" id="linux-progress-text">Preparing Linux environment...</span>
@@ -278,6 +266,9 @@ document.getElementById('app').innerHTML = `
     </button>
     <button class="statusbar-item statusbar-sync" id="status-git-sync" style="display:none;" title="Sync Changes (Pull & Push)">
       ${SVG_ICONS.sync} <span id="status-sync-counts">0↓ 0↑</span>
+    </button>
+    <button class="statusbar-item statusbar-proxy" id="status-proxy" title="Proxy Manager (click to configure)">
+      ${SVG_ICONS.shield} <span id="status-proxy-name">Direct</span>
     </button>
     <span class="statusbar-item message" id="status-message">Ready</span>
     <span class="spacer"></span>
@@ -347,6 +338,7 @@ function toggleMarkdownPreview(force) {
     preview.style.display = 'none';
     edNode.style.display = 'block';
     editor.layout();
+    renderTabs();
     return;
   }
 
@@ -363,6 +355,7 @@ function toggleMarkdownPreview(force) {
 
   updateMarkdownPreview();
   editor.layout();
+  renderTabs();
 }
 
 function openWebPreview(url) {
@@ -423,8 +416,8 @@ async function promptOpenTerminalTab() {
 async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null } = {}) {
   const termId = `term_${++terminalTabCounter}`;
   const title = proxyConfig
-    ? `🛡️ ${proxyConfig.name || 'Proxy'}`
-    : `💻 Term ${terminalTabCounter}`;
+    ? `${proxyConfig.name || 'Proxy'}`
+    : `Term ${terminalTabCounter}`;
 
   const hostContainer = $('editor-terminals');
   const pane = document.createElement('div');
@@ -860,6 +853,30 @@ function updateStatus() {
   $('status-language').textContent = model ? model.getLanguageId() : '';
   if (!activePath) $('status-position').textContent = '';
   updateBreadcrumbs();
+  updateProxyIndicator();
+}
+
+function updateProxyIndicator() {
+  let proxyName = 'Direct';
+  let isProxy = false;
+  if (activeTerminalId && openTerminals.has(activeTerminalId)) {
+    const t = openTerminals.get(activeTerminalId);
+    if (t.proxyConfig?.name) {
+      proxyName = t.proxyConfig.name;
+      isProxy = true;
+    }
+  }
+  const statusName = $('status-proxy-name');
+  if (statusName) statusName.textContent = proxyName;
+
+  const topText = $('topbar-proxy-text');
+  if (topText) topText.textContent = isProxy ? proxyName : 'Proxy';
+
+  const topBadge = $('btn-proxy-manager');
+  if (topBadge) {
+    if (isProxy) topBadge.classList.add('active-proxy');
+    else topBadge.classList.remove('active-proxy');
+  }
 }
 
 editor.onDidChangeCursorPosition((e) => {
@@ -1115,9 +1132,6 @@ function activate(path) {
 
   // Markdown preview support
   const isMd = isMarkdownFile(path);
-  if ($('btn-md-preview')) {
-    $('btn-md-preview').style.display = isMd ? 'inline-flex' : 'none';
-  }
   if (isMd && isMarkdownPreviewOpen) {
     updateMarkdownPreview();
   } else if (!isMd && isMarkdownPreviewOpen) {
@@ -1193,7 +1207,14 @@ function renderTabs() {
     tab.className = 'tab';
     if (path === activePath && !activeWebUrl && !activeTerminalId) tab.classList.add('active');
     if (isDirty(path)) tab.classList.add('dirty');
-    tab.title = path;
+    const isMd = isMarkdownFile(path);
+    if (isMd) {
+      tab.classList.add('tab-markdown');
+      if (path === activePath && isMarkdownPreviewOpen) {
+        tab.classList.add('preview-active');
+      }
+    }
+    tab.title = isMd ? `${path} (Click when active to toggle Preview)` : path;
 
     const icon = document.createElement('span');
     icon.className = 'tab-icon';
@@ -1203,6 +1224,25 @@ function renderTabs() {
     const name = document.createElement('span');
     name.textContent = api.basename(path);
     tab.appendChild(name);
+
+    if (isMd) {
+      const previewBtn = document.createElement('span');
+      previewBtn.className = 'tab-preview-btn' + (path === activePath && isMarkdownPreviewOpen ? ' active' : '');
+      previewBtn.title = path === activePath && isMarkdownPreviewOpen ? 'Switch to Editor' : 'Open Preview';
+      previewBtn.innerHTML = SVG_ICONS.preview;
+      previewBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeDiff();
+        if (activeWebUrl) closeWebPreview(false);
+        if (path !== activePath) {
+          activate(path);
+          toggleMarkdownPreview(true);
+        } else {
+          toggleMarkdownPreview();
+        }
+      });
+      tab.appendChild(previewBtn);
+    }
 
     const close = document.createElement('span');
     close.className = 'close';
@@ -1215,7 +1255,16 @@ function renderTabs() {
     tab.addEventListener('click', () => {
       closeDiff();
       if (activeWebUrl) closeWebPreview(false);
-      activate(path);
+      if (isMd) {
+        if (path !== activePath) {
+          activate(path);
+          toggleMarkdownPreview(true);
+        } else {
+          toggleMarkdownPreview();
+        }
+      } else {
+        activate(path);
+      }
     });
     bar.appendChild(tab);
   }
@@ -1228,7 +1277,7 @@ function renderTabs() {
 
     const icon = document.createElement('span');
     icon.className = 'tab-icon';
-    icon.textContent = '🌐';
+    icon.innerHTML = SVG_ICONS.globe;
     tab.appendChild(icon);
 
     const name = document.createElement('span');
@@ -1265,7 +1314,7 @@ function renderTabs() {
 
     const icon = document.createElement('span');
     icon.className = 'tab-icon';
-    icon.textContent = term.proxyConfig ? '🛡️' : '💻';
+    icon.innerHTML = term.proxyConfig ? SVG_ICONS.shield : SVG_ICONS.terminal;
     tab.appendChild(icon);
 
     const name = document.createElement('span');
@@ -1291,7 +1340,7 @@ function renderTabs() {
   const addTabBtn = document.createElement('button');
   addTabBtn.className = 'tab-add-btn';
   addTabBtn.title = 'New Terminal Tab (Ctrl+Shift+T)';
-  addTabBtn.textContent = '＋';
+  addTabBtn.innerHTML = SVG_ICONS.plus;
   addTabBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     promptOpenTerminalTab();
@@ -2029,9 +2078,9 @@ window.addEventListener('keydown', (e) => {
 // Terminal tab and proxy manager buttons
 $('btn-new-term-tab')?.addEventListener('click', () => promptOpenTerminalTab());
 $('btn-proxy-manager')?.addEventListener('click', () => showProxyManagerModal());
+$('status-proxy')?.addEventListener('click', () => showProxyManagerModal());
 
 // Toolbar buttons for preview & external links
-$('btn-md-preview')?.addEventListener('click', () => toggleMarkdownPreview());
 $('btn-close-md-preview')?.addEventListener('click', () => toggleMarkdownPreview(false));
 
 $('btn-web-back')?.addEventListener('click', () => {

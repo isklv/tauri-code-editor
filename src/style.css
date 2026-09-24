@@ -508,15 +508,55 @@ main.main {
   filter: brightness(1.15);
 }
 
+.topbar-proxy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  color: #c5c5c5;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.topbar-proxy-badge:hover {
+  background: #2e2e30;
+  border-color: #555555;
+  color: #ffffff;
+}
+
+.topbar-proxy-badge .proxy-badge-icon {
+  display: flex;
+  align-items: center;
+  color: #8bb8e8;
+}
+
+.topbar-proxy-badge.active-proxy {
+  background: #142d42;
+  border-color: #1f6feb;
+  color: #79c0ff;
+}
+
+.topbar-proxy-badge.active-proxy .proxy-badge-icon {
+  color: #58a6ff;
+}
+
 @media (max-width: 700px) {
   .topbar {
     height: 42px;
-    padding: 0 6px;
-    gap: 6px;
+    padding: 0 4px;
+    gap: 4px;
   }
 
   .topbar-workspace-btn {
-    max-width: 110px;
+    max-width: 100px;
     padding: 4px 6px;
     font-size: 11px;
   }
@@ -529,14 +569,28 @@ main.main {
     display: none !important;
   }
 
+  .topbar-btn-extra {
+    display: none !important;
+  }
+
   .quick-open-pill {
-    padding: 0 8px;
+    padding: 0 6px;
+    min-width: 0;
+  }
+
+  .topbar-proxy-badge {
+    padding: 3px 7px;
+    font-size: 11px;
+    gap: 3px;
   }
 }
 
 @media (max-width: 480px) {
   .topbar-workspace-btn {
     display: none;
+  }
+  .quick-open-pill {
+    max-width: 140px;
   }
 }
 
@@ -613,6 +667,40 @@ main.main {
   content: '×';
 }
 
+.tab-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: #888;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 2px;
+}
+
+.tab-preview-btn:hover {
+  background: #ffffff22;
+  color: #fff;
+  opacity: 1;
+}
+
+.tab-preview-btn.active {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.tab.preview-active {
+  border-top-color: #519aba;
+}
+
+.tab.preview-active .tab-preview-btn {
+  color: #519aba;
+  opacity: 1;
+}
+
 .editor {
   flex: 1;
   min-height: 0;
@@ -655,14 +743,21 @@ main.main {
 }
 
 .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--fg-dim);
   cursor: pointer;
-  font-size: 14px;
   line-height: 1;
-  padding: 2px 6px;
-  border-radius: 3px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.icon-button svg {
+  display: block;
 }
 
 .icon-button:hover {

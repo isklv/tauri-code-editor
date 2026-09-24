@@ -62,6 +62,53 @@
                 <data android:scheme="content" />
                 <data android:mimeType="*/*" />
             </intent-filter>
+            <!-- tauri-file-associations. AUTO-GENERATED. DO NOT REMOVE. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="text/plain" />
+                <data android:pathPattern=".*\\.txt" />
+                <data android:pathPattern=".*\\.text" />
+                <data android:pathPattern=".*\\.md" />
+                <data android:pathPattern=".*\\.markdown" />
+                <data android:pathPattern=".*\\.log" />
+                <data android:pathPattern=".*\\.rs" />
+                <data android:pathPattern=".*\\.js" />
+                <data android:pathPattern=".*\\.ts" />
+                <data android:pathPattern=".*\\.jsx" />
+                <data android:pathPattern=".*\\.tsx" />
+                <data android:pathPattern=".*\\.html" />
+                <data android:pathPattern=".*\\.htm" />
+                <data android:pathPattern=".*\\.css" />
+                <data android:pathPattern=".*\\.scss" />
+                <data android:pathPattern=".*\\.json" />
+                <data android:pathPattern=".*\\.xml" />
+                <data android:pathPattern=".*\\.svg" />
+                <data android:pathPattern=".*\\.yaml" />
+                <data android:pathPattern=".*\\.yml" />
+                <data android:pathPattern=".*\\.toml" />
+                <data android:pathPattern=".*\\.ini" />
+                <data android:pathPattern=".*\\.conf" />
+                <data android:pathPattern=".*\\.cfg" />
+                <data android:pathPattern=".*\\.sh" />
+                <data android:pathPattern=".*\\.bash" />
+                <data android:pathPattern=".*\\.zsh" />
+                <data android:pathPattern=".*\\.py" />
+                <data android:pathPattern=".*\\.c" />
+                <data android:pathPattern=".*\\.h" />
+                <data android:pathPattern=".*\\.cpp" />
+                <data android:pathPattern=".*\\.hpp" />
+                <data android:pathPattern=".*\\.java" />
+                <data android:pathPattern=".*\\.kt" />
+                <data android:pathPattern=".*\\.go" />
+                <data android:pathPattern=".*\\.sql" />
+                <data android:pathPattern=".*\\.*" />
+            </intent-filter>
+            
+            <!-- tauri-file-associations. AUTO-GENERATED. DO NOT REMOVE. -->
         </activity>
 
         <provider

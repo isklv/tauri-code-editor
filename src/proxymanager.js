@@ -8,6 +8,7 @@
  */
 
 import * as api from './api.js';
+import { SVG_ICONS } from './icons.js';
 
 const STORAGE_KEY = 'geko_proxies';
 
@@ -83,7 +84,20 @@ export function showOpenTerminalTabDialog() {
 
     const title = document.createElement('div');
     title.className = 'modal-title';
-    title.innerHTML = `<span>💻 New Terminal Tab</span>`;
+    title.style.display = 'flex';
+    title.style.alignItems = 'center';
+    title.style.justifyContent = 'space-between';
+    title.innerHTML = `
+      <span style="display:inline-flex;align-items:center;gap:8px;">
+        ${SVG_ICONS.terminal} <span>New Terminal Tab</span>
+      </span>
+    `;
+    const closeHeaderBtn = document.createElement('button');
+    closeHeaderBtn.className = 'icon-button';
+    closeHeaderBtn.title = 'Close';
+    closeHeaderBtn.innerHTML = SVG_ICONS.close;
+    closeHeaderBtn.addEventListener('click', () => closeDialog(null));
+    title.appendChild(closeHeaderBtn);
     modal.appendChild(title);
 
     const form = document.createElement('div');
@@ -161,7 +175,7 @@ export function showOpenTerminalTabDialog() {
     const manageBtn = document.createElement('button');
     manageBtn.type = 'button';
     manageBtn.className = 'tool';
-    manageBtn.innerHTML = `⚙️ Manage Proxies`;
+    manageBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;">${SVG_ICONS.settings} Manage Proxies</span>`;
     manageBtn.addEventListener('click', () => {
       closeDialog(null);
       showProxyManagerModal().then(() => {
@@ -256,13 +270,47 @@ export function showProxyManagerModal() {
 
     const modal = document.createElement('div');
     modal.className = 'modal proxy-manager-modal';
+    backdrop.appendChild(modal);
+
+    function closeManager() {
+      document.removeEventListener('keydown', onKeyDown, true);
+      backdrop.hidden = true;
+      backdrop.textContent = '';
+      resolve();
+    }
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeManager();
+      }
+    };
+
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) closeManager();
+    });
+
+    document.addEventListener('keydown', onKeyDown, true);
 
     function renderList() {
       modal.textContent = '';
 
       const title = document.createElement('div');
       title.className = 'modal-title';
-      title.innerHTML = `<span>🛡️ Proxy Manager</span>`;
+      title.style.display = 'flex';
+      title.style.alignItems = 'center';
+      title.style.justifyContent = 'space-between';
+      title.innerHTML = `
+        <span style="display:inline-flex;align-items:center;gap:8px;">
+          ${SVG_ICONS.shield} <span>Proxy Manager</span>
+        </span>
+      `;
+      const closeHeaderBtn = document.createElement('button');
+      closeHeaderBtn.className = 'icon-button';
+      closeHeaderBtn.title = 'Close';
+      closeHeaderBtn.innerHTML = SVG_ICONS.close;
+      closeHeaderBtn.addEventListener('click', () => closeManager());
+      title.appendChild(closeHeaderBtn);
       modal.appendChild(title);
 
       const desc = document.createElement('div');
@@ -312,10 +360,12 @@ export function showProxyManagerModal() {
             const url = buildProxyUrl(p);
             try {
               const ok = await api.testProxyConnection(url);
-              testBtn.textContent = ok ? '✓ Online' : '✗ Failed';
+              testBtn.innerHTML = ok
+                ? `<span style="display:inline-flex;align-items:center;gap:3px;">${SVG_ICONS.check} Online</span>`
+                : `<span style="display:inline-flex;align-items:center;gap:3px;">${SVG_ICONS.close} Failed</span>`;
               testBtn.className = ok ? 'tool small success' : 'tool small error';
             } catch (err) {
-              testBtn.textContent = '✗ Error';
+              testBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:3px;">${SVG_ICONS.close} Error</span>`;
               testBtn.className = 'tool small error';
               testBtn.title = String(err);
             } finally {
@@ -359,7 +409,7 @@ export function showProxyManagerModal() {
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'tool primary';
-      addBtn.textContent = '+ Add Proxy';
+      addBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px;">${SVG_ICONS.plus} Add Proxy</span>`;
       addBtn.addEventListener('click', () => renderForm(null));
 
       const closeBtn = document.createElement('button');
@@ -378,7 +428,20 @@ export function showProxyManagerModal() {
 
       const title = document.createElement('div');
       title.className = 'modal-title';
-      title.textContent = existing ? `Edit Proxy: ${existing.name}` : 'Add New Proxy';
+      title.style.display = 'flex';
+      title.style.alignItems = 'center';
+      title.style.justifyContent = 'space-between';
+      title.innerHTML = `
+        <span style="display:inline-flex;align-items:center;gap:8px;">
+          ${SVG_ICONS.shield} <span>${existing ? `Edit Proxy: ${escapeHtml(existing.name)}` : 'Add New Proxy'}</span>
+        </span>
+      `;
+      const closeHeaderBtn = document.createElement('button');
+      closeHeaderBtn.className = 'icon-button';
+      closeHeaderBtn.title = 'Back to List';
+      closeHeaderBtn.innerHTML = SVG_ICONS.close;
+      closeHeaderBtn.addEventListener('click', () => renderList());
+      title.appendChild(closeHeaderBtn);
       modal.appendChild(title);
 
       const form = document.createElement('div');
@@ -534,12 +597,6 @@ export function showProxyManagerModal() {
         saveProxy(p);
         renderList();
       });
-    }
-
-    function closeManager() {
-      backdrop.hidden = true;
-      backdrop.textContent = '';
-      resolve();
     }
 
     renderList();
