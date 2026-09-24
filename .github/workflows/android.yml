@@ -1,0 +1,275 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      all_abis:
+        description: 'Build every ABI instead of arm64 only'
+        type: boolean
+        default: false
+
+# Versions are pinned so a CI build matches what is built locally.
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '22'
+  ANDROID_PLATFORM: '36'
+  ANDROID_BUILD_TOOLS: '36.1.0'
+  ANDROID_NDK_VERSION: '27.3.13750724'
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed only to attach the APK to a tagged release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Android SDK
+        run: |
+          ANDROID_HOME="/usr/local/lib/android/sdk"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+            echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          else
+            CMDLINE_DIR=$(find "$ANDROID_HOME/cmdline-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+            echo "${CMDLINE_DIR}/bin" >> "$GITHUB_PATH"
+          fi
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK_VERSION}"
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Select Rust targets
+        id: targets
+        run: |
+          # Build optimized arm64-v8a (~12MB) by default. Build all ABIs (~40MB) only on explicit request.
+          if [ "${{ inputs.all_abis }}" = "true" ]; then
+            echo "rust=aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android" >> "$GITHUB_OUTPUT"
+            echo "tauri=" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=aarch64-linux-android" >> "$GITHUB_OUTPUT"
+            echo "tauri=--target aarch64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust targets
+        run: rustup target add ${{ steps.targets.outputs.rust }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: cargo-android-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-android-
+
+      - name: Cache gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/gradle/**') }}
+          restore-keys: gradle-
+
+      - run: npm ci
+
+      - name: Configure build versioning
+        id: versioning
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          RUN_NUM="${GITHUB_RUN_NUMBER}"
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            VERSION_NAME="${BASE_VERSION}+b${RUN_NUM}.${SHORT_SHA}"
+          else
+            VERSION_NAME="${BASE_VERSION}-dev.${RUN_NUM}+${SHORT_SHA}"
+          fi
+
+          VERSION_CODE=$((1000 + RUN_NUM))
+
+          echo "version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_HASH=$SHORT_SHA" >> "$GITHUB_ENV"
+
+          echo "Configured Geko version: $VERSION_NAME (versionCode: $VERSION_CODE)"
+
+      - name: Configure release signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set — the APK will be unsigned."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          keystore="${RUNNER_TEMP}/release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          # Written with a heredoc so the secrets never appear in the command line.
+          {
+            printf 'storeFile=%s\n' "$keystore"
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+          } > src-tauri/gen/android/keystore.properties
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build APK
+        env:
+          VERSION_NAME: ${{ steps.versioning.outputs.version_name }}
+          VERSION_CODE: ${{ steps.versioning.outputs.version_code }}
+          GIT_COMMIT_HASH: ${{ steps.versioning.outputs.short_sha }}
+        run: npx tauri android build --apk ${{ steps.targets.outputs.tauri }}
+
+      - name: Locate and version the APK
+        run: |
+          outputs=src-tauri/gen/android/app/build/outputs/apk
+          apk=$(find "$outputs" -name '*release*.apk' | sort | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::No release APK under $outputs"
+            find "$outputs" -type f -printf '%P\n' 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Original APK: $apk"
+
+          case "$apk" in
+            *arm64-v8a*) abi="-arm64" ;;
+            *armeabi-v7a*) abi="-armv7" ;;
+            *x86_64*) abi="-x86_64" ;;
+            *x86*) abi="-x86" ;;
+            *universal*) abi="-universal" ;;
+            *) abi="" ;;
+          esac
+
+          if [[ "$apk" == *"-unsigned.apk" ]]; then
+            suffix="-unsigned"
+          else
+            suffix=""
+          fi
+
+          versioned_apk="$(dirname "$apk")/geko-v${{ steps.versioning.outputs.version_name }}${abi}${suffix}.apk"
+          cp "$apk" "$versioned_apk"
+
+          # Calculate sha256
+          sha256sum "$versioned_apk" > "${versioned_apk}.sha256"
+
+          echo "RAW_APK_PATH=$apk" >> "$GITHUB_ENV"
+          echo "APK_PATH=$versioned_apk" >> "$GITHUB_ENV"
+          echo "SHA256_PATH=${versioned_apk}.sha256" >> "$GITHUB_ENV"
+          ls -lh "$versioned_apk"
+
+      - name: Verify the signature
+        if: steps.signing.outputs.signed == 'true'
+        run: |
+          case "$RAW_APK_PATH" in
+            *-unsigned.apk)
+              echo "::error::Signing secrets are set but Gradle produced an unsigned APK — check that the secrets decode to a valid keystore."
+              exit 1
+              ;;
+          esac
+          "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" verify --verbose "$APK_PATH"
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f src-tauri/gen/android/keystore.properties "${RUNNER_TEMP}/release.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geko-apk-v${{ steps.versioning.outputs.version_name }}${{ steps.signing.outputs.signed == 'false' && '-unsigned' || '' }}
+          path: |
+            ${{ env.APK_PATH }}
+            ${{ env.SHA256_PATH }}
+          if-no-files-found: error
+
+      - name: Publish the rolling prerelease
+        if: github.ref == 'refs/heads/main' && steps.signing.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
+          gh release create latest "$APK_PATH" "$SHA256_PATH" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Latest build (v${{ steps.versioning.outputs.version_name }})" \
+            --notes "Automatic build of ${GITHUB_SHA:0:7} (version \`${{ steps.versioning.outputs.version_name }}\`, versionCode \`${{ steps.versioning.outputs.version_code }}\`). Install with \`adb install -r\` or open this page on the phone and tap the APK."
+
+      - name: Attach the APK to the tagged release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" "$APK_PATH" "$SHA256_PATH" --clobber
+
+      - name: Report what was built
+        if: always()
+        run: |
+          {
+            echo "## Build Info"
+            echo
+            echo "- **Version Name:** \`${{ steps.versioning.outputs.version_name }}\`"
+            echo "- **Version Code:** \`${{ steps.versioning.outputs.version_code }}\`"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+            echo
+            echo "## APK"
+            echo
+            if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+              echo "Signed and installable."
+              if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+                echo
+                echo "Direct download: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/latest"
+              fi
+            else
+              echo "**Unsigned — Android will refuse to install this APK.**"
+              echo "The installer reports \`App not installed\` because an unsigned"
+              echo "package has no certificate at all."
+              echo
+              echo "Add the four signing secrets to fix it; \`scripts/github-secrets.sh\`"
+              echo "prints the values. See the README for details."
+            fi
+            echo
+            echo "Note that an artifact downloaded from the Actions tab arrives as a"
+            echo "\`.zip\` and has to be unpacked before installing."
+          } >> "$GITHUB_STEP_SUMMARY"

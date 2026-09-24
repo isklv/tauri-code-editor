@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
+
+      - run: rustup component add clippy rustfmt
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: cargo-linux-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-linux-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # `tauri::generate_context!` embeds dist/, so the frontend must exist
+      # before the Rust crate will compile.
+      - run: npm ci
+      - run: bun run build
+
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  desktop:
+    name: Desktop bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: cargo-desktop-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-desktop-
+
+      - run: npm ci
+
+      # AppImage bundling needs linuxdeploy, which breaks on modern glibc;
+      # deb is enough to prove the desktop build still links and packages.
+      - run: npx tauri build --bundles deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geko-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+      - name: Attach desktop deb to the tagged release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" src-tauri/target/release/bundle/deb/*.deb --clobber
