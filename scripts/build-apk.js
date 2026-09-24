@@ -1,5 +1,5 @@
-#!/usr/bin/env node
-
+#!/usr/bin/env bun
+ 
 /**
  * Builds an optimized release APK for Geko.
  *
@@ -34,14 +34,14 @@ console.log(`\n\x1b[1;36m=== Building Optimized Geko APK v${version} ===\x1b[0m\
 console.log(`Target: \x1b[1m${isUniversal ? 'Universal (All 4 ABIs ~40MB)' : `Optimized ${target} (arm64-v8a ~12MB)`}\x1b[0m\n`);
 
 // 1. Build frontend first
-console.log('\x1b[34m[1/3] Building frontend assets (Vite)...\x1b[0m');
-execSync('npm run build', { cwd: rootDir, stdio: 'inherit' });
+console.log('\x1b[34m[1/3] Building frontend assets (Vite via Bun)...\x1b[0m');
+execSync('bun run build', { cwd: rootDir, stdio: 'inherit' });
 
 // 2. Build Android APK via Tauri
 console.log('\n\x1b[34m[2/3] Compiling Rust & Gradle Android APK...\x1b[0m');
 const tauriCmd = target
-  ? `npx tauri android build --apk --target ${target}`
-  : `npx tauri android build --apk`;
+  ? `bunx tauri android build --apk --target ${target}`
+  : `bunx tauri android build --apk`;
 
 console.log(`Running: ${tauriCmd}\n`);
 execSync(tauriCmd, { cwd: rootDir, stdio: 'inherit' });
