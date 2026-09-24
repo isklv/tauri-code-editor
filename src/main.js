@@ -436,11 +436,11 @@ async function promptOpenTerminalTab() {
   await openTerminalTab(res);
 }
 
-async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null } = {}) {
+async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null, initCommand = null, customTitle = null } = {}) {
   const termId = `term_${++terminalTabCounter}`;
-  const title = proxyConfig
+  const title = customTitle || (proxyConfig
     ? `${proxyConfig.name || 'Proxy'}`
-    : `Term ${terminalTabCounter}`;
+    : `Term ${terminalTabCounter}`);
 
   const hostContainer = $('editor-terminals');
   const pane = document.createElement('div');
@@ -521,6 +521,11 @@ async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null } = {}
   const started = await termPanel.start(rootPath, shellMode, proxyOpts);
   if (started) {
     setStatus(`Terminal tab opened (${shellMode}${proxyConfig ? ' via ' + proxyConfig.name : ''})`);
+    if (initCommand) {
+      setTimeout(() => {
+        termPanel.send(initCommand + '\r');
+      }, 350);
+    }
   }
   renderTabs();
   return termId;
@@ -1899,16 +1904,21 @@ async function reinstallLinuxEnv(branch = null) {
   }
 }
 
-/** Modal dialog for switching Alpine Linux version / branch. */
+/** Modal dialog for switching Alpine Linux version / branch and managing AI assistants. */
 async function openAlpineSettingsModal() {
   const existing = document.getElementById('alpine-settings-modal');
   if (existing) existing.remove();
 
   let config;
+  let anthropicKey = '';
   try {
-    config = await api.getAlpineConfig();
+    [config, anthropicKey] = await Promise.all([
+      api.getAlpineConfig().catch(() => ({ current_branch: 'v3.22', edge_enabled: false, available_branches: ['v3.22', 'v3.23', 'edge'] })),
+      api.getAnthropicApiKey().catch(() => ''),
+    ]);
   } catch (err) {
     config = { current_branch: 'v3.22', edge_enabled: false, available_branches: ['v3.22', 'v3.23', 'edge'] };
+    anthropicKey = '';
   }
 
   const branches = [
@@ -1932,6 +1942,41 @@ async function openAlpineSettingsModal() {
           <span class="alpine-status-label">Текущая ветка:</span>
           <span class="alpine-branch-pill">${config.current_branch}</span>
           ${config.edge_enabled ? '<span class="alpine-edge-pill">+ @edge</span>' : ''}
+        </div>
+
+        <div class="alpine-section-title">🤖 AI-Ассистенты и CLI:</div>
+        <div class="alpine-ai-presets">
+          <div class="ai-preset-card">
+            <div class="ai-preset-header">
+              <span class="ai-preset-title">Claude Code CLI</span>
+              <span class="ai-preset-tag">@anthropic-ai/claude-code</span>
+            </div>
+            <div class="ai-preset-desc">
+              Интерактивный терминальный AI-ассистент. Требует Node.js, ripgrep и ключ API Anthropic.
+            </div>
+            <div class="ai-preset-key-row">
+              <input type="password" id="inp-anthropic-key" placeholder="ANTHROPIC_API_KEY (sk-ant-api03-...)" value="${(anthropicKey || '').replace(/"/g, '&quot;')}" />
+              <button class="btn-primary" id="btn-save-anthropic-key">Сохранить</button>
+            </div>
+            <div class="ai-preset-actions">
+              <button class="btn-secondary" id="btn-install-claude-now">📦 Установить (install-claude)</button>
+              <button class="btn-primary" id="btn-run-claude-now">▶ Запустить (claude)</button>
+            </div>
+          </div>
+
+          <div class="ai-preset-card">
+            <div class="ai-preset-header">
+              <span class="ai-preset-title">Antigravity CLI</span>
+              <span class="ai-preset-tag">agy</span>
+            </div>
+            <div class="ai-preset-desc">
+              Терминальный агент Google Antigravity. Подключает бинарник и сессию хоста внутрь Alpine.
+            </div>
+            <div class="ai-preset-actions">
+              <button class="btn-secondary" id="btn-setup-agy-now">🔗 Подключить (install-agy)</button>
+              <button class="btn-primary" id="btn-run-agy-now">▶ Запустить (agy)</button>
+            </div>
+          </div>
         </div>
 
         <div class="alpine-section-title">Ветка пакетов Alpine:</div>
@@ -1980,6 +2025,64 @@ async function openAlpineSettingsModal() {
   overlay.querySelector('#btn-alpine-cancel')?.addEventListener('click', closeModal);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) closeModal();
+  });
+
+  // AI Presets handlers
+  overlay.querySelector('#btn-save-anthropic-key')?.addEventListener('click', async () => {
+    const keyVal = overlay.querySelector('#inp-anthropic-key')?.value?.trim() || '';
+    const btn = overlay.querySelector('#btn-save-anthropic-key');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      await api.setAnthropicApiKey(keyVal);
+      setStatus(keyVal ? 'API ключ Anthropic сохранён' : 'API ключ Anthropic удалён');
+      btn.textContent = '✓';
+      setTimeout(() => {
+        btn.textContent = origText;
+        btn.disabled = false;
+      }, 1500);
+    } catch (e) {
+      setStatus(`Ошибка сохранения ключа: ${e}`, true);
+      btn.textContent = origText;
+      btn.disabled = false;
+    }
+  });
+
+  overlay.querySelector('#btn-install-claude-now')?.addEventListener('click', async () => {
+    closeModal();
+    await openTerminalTab({
+      shellMode: 'alpine',
+      initCommand: 'install-claude',
+      customTitle: 'Install Claude',
+    });
+  });
+
+  overlay.querySelector('#btn-run-claude-now')?.addEventListener('click', async () => {
+    closeModal();
+    await openTerminalTab({
+      shellMode: 'alpine',
+      initCommand: 'claude',
+      customTitle: 'Claude Code',
+    });
+  });
+
+  overlay.querySelector('#btn-setup-agy-now')?.addEventListener('click', async () => {
+    closeModal();
+    await openTerminalTab({
+      shellMode: 'alpine',
+      initCommand: 'install-agy',
+      customTitle: 'Setup AGY',
+    });
+  });
+
+  overlay.querySelector('#btn-run-agy-now')?.addEventListener('click', async () => {
+    closeModal();
+    await openTerminalTab({
+      shellMode: 'alpine',
+      initCommand: 'agy',
+      customTitle: 'Antigravity CLI',
+    });
   });
 
   const branchRadios = overlay.querySelectorAll('input[name="alpine-branch"]');

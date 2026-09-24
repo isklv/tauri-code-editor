@@ -272,6 +272,16 @@ export async function removeLinuxEnv() {
   return invoke('remove_linux_env');
 }
 
+export async function setAnthropicApiKey(key) {
+  if (!isTauri) return;
+  return invoke('set_anthropic_api_key', { key });
+}
+
+export async function getAnthropicApiKey() {
+  if (!isTauri) return '';
+  return invoke('get_anthropic_api_key');
+}
+
 export async function onLinuxEnvProgress(callback) {
   if (!isTauri) return () => {};
   return listen('linux-env://progress', (event) => callback(event.payload));

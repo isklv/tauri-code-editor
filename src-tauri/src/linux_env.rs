@@ -500,6 +500,10 @@ export BUN_INSTALL="/root/.bun"
 export TMPDIR="/tmp"
 export GOTMPDIR="/tmp"
 
+if [ -f "/root/.anthropic_key" ]; then
+  export ANTHROPIC_API_KEY="$(cat /root/.anthropic_key | tr -d '\r\n')"
+fi
+
 # Go looks its own tools up with exec.LookPath, which probes them using
 # faccessat2(2) -- a syscall PRoot has no table entry for on arm64, so the guest
 # path is handed to the host kernel untranslated and comes back ENOENT. `go
@@ -604,16 +608,88 @@ Package manager: apk
 Quick start:
   apk update
   apk add git         # install Git
-  apk add go          # install Go compiler
-  apk add rust cargo  # install Rust & Cargo
-  apk add python3     # install Python
+  install-claude      # install Claude Code (Anthropic CLI)
+  install-agy         # setup Antigravity CLI (Google AGY)
   apk add nodejs npm  # install Node.js
+  apk add python3     # install Python
 
 EOF
 "#;
     let _ = fs::write(&welcome_file, welcome_msg);
     make_executable(&welcome_file);
+
+    ensure_helper_scripts(rootfs_path);
+
     Ok(())
+}
+
+/// Creates or updates convenience scripts inside the Alpine rootfs (install-claude, install-agy).
+pub fn ensure_helper_scripts(rootfs_path: &Path) {
+    let bin_dir = rootfs_path.join("usr").join("local").join("bin");
+    let _ = fs::create_dir_all(&bin_dir);
+
+    // 1. install-claude script
+    let claude_script = bin_dir.join("install-claude");
+    let claude_content = r#"#!/bin/sh
+set -e
+printf "\033[1;36m=== Installing Claude Code in Alpine PRoot ===\033[0m\n"
+printf "Step 1/2: Installing runtime dependencies (nodejs, npm, git, ripgrep, curl, bash, gcompat)...\n"
+apk update
+apk add --no-cache nodejs npm git ripgrep curl bash gcompat ca-certificates
+printf "Step 2/2: Installing @anthropic-ai/claude-code globally via npm...\n"
+npm install -g @anthropic-ai/claude-code
+printf "\033[1;32m✔ Claude Code successfully installed!\033[0m\n"
+claude --version 2>/dev/null || true
+printf "\033[90mTip: Run 'claude' to start. Ensure ANTHROPIC_API_KEY is exported if needed.\033[0m\n"
+"#;
+    let _ = fs::write(&claude_script, claude_content);
+    make_executable(&claude_script);
+
+    // 2. install-agy script
+    let agy_script = bin_dir.join("install-agy");
+    let agy_content = r#"#!/bin/sh
+set -e
+printf "\033[1;36m=== Setting up Antigravity CLI in Alpine PRoot ===\033[0m\n"
+printf "Step 1/2: Installing runtime dependencies (gcompat, curl, bash, ca-certificates)...\n"
+apk update
+apk add --no-cache curl bash gcompat ca-certificates
+printf "Step 2/2: Detecting host binary and credentials...\n"
+FOUND_BIN=0
+for candidate in /home/*/.local/bin/agy; do
+  if [ -f "$candidate" ]; then
+    mkdir -p /usr/local/bin
+    ln -sf "$candidate" /usr/local/bin/agy
+    printf "\033[32m✔ Linked host binary: %s -> /usr/local/bin/agy\033[0m\n" "$candidate"
+    FOUND_BIN=1
+    break
+  fi
+done
+if [ "$FOUND_BIN" = "0" ]; then
+  printf "\033[33mNotice: Host agy binary not found in /home/*/.local/bin/agy.\033[0m\n"
+  printf "If you have an agy binary, copy or symlink it to /usr/local/bin/agy.\n"
+fi
+for gdir in /home/*/.gemini; do
+  if [ -d "$gdir" ]; then
+    mkdir -p /root/.gemini
+    if [ -d "$gdir/antigravity-cli" ]; then
+      ln -sfn "$gdir/antigravity-cli" /root/.gemini/antigravity-cli
+      printf "\033[32m✔ Linked host Antigravity configs and tokens: %s/antigravity-cli\033[0m\n" "$gdir"
+    fi
+    break
+  fi
+done
+printf "\033[1;32m✔ Antigravity CLI setup completed!\033[0m\n"
+agy version 2>/dev/null || agy --version 2>/dev/null || printf "Run 'agy' to start.\n"
+"#;
+    let _ = fs::write(&agy_script, agy_content);
+    make_executable(&agy_script);
+
+    // Also ensure 00-geko-env.sh is updated with ANTHROPIC_API_KEY loader
+    let profile_d = rootfs_path.join("etc").join("profile.d");
+    let _ = fs::create_dir_all(&profile_d);
+    let env_script = profile_d.join("00-geko-env.sh");
+    let script = env_script_contents(rootfs_path);
+    let _ = fs::write(&env_script, &script);
 }
 
 /// Run `apk update` (plus a couple of staples) inside the fresh rootfs so the
@@ -867,6 +943,7 @@ pub fn build_proot_command(
     proxy_url: Option<&str>,
 ) -> Option<CommandBuilder> {
     let (proot, rootfs) = ready_paths(app)?;
+    ensure_helper_scripts(&rootfs);
 
     let mut cmd = CommandBuilder::new(proot);
     for arg in proot_args(&rootfs, cwd) {
@@ -1038,4 +1115,26 @@ pub fn set_alpine_branch(
     });
 
     Ok(())
+}
+
+/// Sets or updates the ANTHROPIC_API_KEY inside the Alpine rootfs.
+pub fn set_anthropic_api_key(app: &AppHandle, key: &str) -> Result<(), String> {
+    let rootfs = rootfs_dir(app)?;
+    let key_file = rootfs.join("root").join(".anthropic_key");
+    fs::write(key_file, key.trim()).map_err(|e| format!("failed to write Anthropic key: {e}"))?;
+    ensure_helper_scripts(&rootfs);
+    Ok(())
+}
+
+/// Reads the currently configured ANTHROPIC_API_KEY from the Alpine rootfs.
+pub fn get_anthropic_api_key(app: &AppHandle) -> Result<String, String> {
+    let rootfs = rootfs_dir(app)?;
+    let key_file = rootfs.join("root").join(".anthropic_key");
+    if key_file.exists() {
+        fs::read_to_string(key_file)
+            .map(|s| s.trim().to_string())
+            .map_err(|e| format!("failed to read Anthropic key: {e}"))
+    } else {
+        Ok(String::new())
+    }
 }

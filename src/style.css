@@ -2055,8 +2055,94 @@ button.tool.primary:hover {
 /* ── Alpine Linux Settings Modal ── */
 
 .alpine-modal {
-  width: 460px;
+  width: 500px;
   max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.alpine-ai-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ai-preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #1e222b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.ai-preset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-preset-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.ai-preset-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #2b3548;
+  color: #79c0ff;
+  border: 1px solid #388bfd40;
+  font-family: var(--mono-font);
+}
+
+.ai-preset-desc {
+  font-size: 11px;
+  color: var(--fg-dim);
+  line-height: 1.4;
+}
+
+.ai-preset-desc code {
+  background: #2a2a2a;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--mono-font);
+  font-size: 11px;
+  color: #7ee787;
+}
+
+.ai-preset-key-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ai-preset-key-row input {
+  flex: 1;
+  background: #14161b;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--mono-font);
+}
+
+.ai-preset-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ai-preset-actions button,
+.ai-preset-key-row button {
+  padding: 5px 10px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .alpine-status-bar {

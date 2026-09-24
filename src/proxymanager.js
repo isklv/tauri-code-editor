@@ -154,14 +154,34 @@ export function showOpenTerminalTabDialog() {
     envGroup.appendChild(envSelect);
     form.appendChild(envGroup);
 
+    // Startup Tool / Preset selector group
+    const cmdGroup = document.createElement('div');
+    cmdGroup.className = 'form-group';
+    cmdGroup.innerHTML = `
+      <label class="form-label" for="term-cmd-select">Startup Tool / Preset:</label>
+    `;
+    const cmdSelect = document.createElement('select');
+    cmdSelect.id = 'term-cmd-select';
+    cmdSelect.className = 'modal-select';
+    cmdSelect.innerHTML = `
+      <option value="">🐚 Interactive Shell (sh)</option>
+      <option value="claude">🤖 Claude Code (claude)</option>
+      <option value="agy">🚀 Antigravity CLI (agy)</option>
+      <option value="install-claude">📦 Install Claude Code (preset)</option>
+      <option value="install-agy">🛠️ Setup Antigravity CLI (preset)</option>
+    `;
+    cmdGroup.appendChild(cmdSelect);
+    form.appendChild(cmdGroup);
+
     // AI Agent Hint / Info box
     const infoBox = document.createElement('div');
     infoBox.className = 'proxy-info-hint';
     infoBox.innerHTML = `
-      <div class="hint-title">⚡ Claude Code & Agy Ready</div>
+      <div class="hint-title">⚡ Claude Code & Antigravity Ready</div>
       <div class="hint-text">
-        Proxy variables (<code>ALL_PROXY</code>, <code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code>) 
-        and full-color PTY are automatically exported for Node.js, Git, and Python.
+        Встроены скрипты <code>install-claude</code> и <code>install-agy</code>. 
+        Переменные прокси (<code>ALL_PROXY</code>, <code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code>) 
+        автоматически применяются ко всем AI-запросам.
       </div>
     `;
     form.appendChild(infoBox);
@@ -227,6 +247,7 @@ export function showOpenTerminalTabDialog() {
     function doLaunch() {
       const selectedProxyId = proxySelect.value;
       const shellMode = envSelect.value;
+      const cmdPreset = cmdSelect.value;
       let proxyConfig = null;
 
       if (selectedProxyId !== 'direct') {
@@ -245,6 +266,16 @@ export function showOpenTerminalTabDialog() {
       closeDialog({
         shellMode,
         proxyConfig,
+        initCommand: cmdPreset || null,
+        customTitle: cmdPreset === 'claude'
+          ? 'Claude Code'
+          : (cmdPreset === 'agy'
+            ? 'Antigravity'
+            : (cmdPreset === 'install-claude'
+              ? 'Install Claude'
+              : (cmdPreset === 'install-agy'
+                ? 'Setup Antigravity'
+                : null))),
       });
     }
 

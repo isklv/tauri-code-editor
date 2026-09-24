@@ -1,3 +1,4 @@
+#![allow(unknown_lints)]
 #![allow(clippy::chunks_exact_to_as_chunks)]
 
 use std::fs;
@@ -1171,6 +1172,16 @@ fn remove_linux_env(app: AppHandle) -> Result<(), String> {
     linux_env::remove_env(&app)
 }
 
+#[tauri::command]
+fn set_anthropic_api_key(app: AppHandle, key: String) -> Result<(), String> {
+    linux_env::set_anthropic_api_key(&app, &key)
+}
+
+#[tauri::command]
+fn get_anthropic_api_key(app: AppHandle) -> Result<String, String> {
+    linux_env::get_anthropic_api_key(&app)
+}
+
 // ── Git commands ──
 
 #[tauri::command]
@@ -1396,6 +1407,8 @@ pub fn run() {
             get_alpine_config,
             set_alpine_branch,
             remove_linux_env,
+            set_anthropic_api_key,
+            get_anthropic_api_key,
             git_status,
             git_stage,
             git_unstage,
