@@ -1,3 +1,5 @@
+#![allow(clippy::chunks_exact_to_as_chunks)]
+
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
