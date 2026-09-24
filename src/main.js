@@ -403,9 +403,32 @@ function closeWebPreview(restoreFile = true) {
 
 // ── Terminal Tabs State & Management ──
 let terminalTabCounter = 0;
-/** @type {Map<string, {id: string, title: string, shellMode: string, proxyConfig: any, panel: TerminalPanel, hostEl: HTMLElement}>} */
+/** @type {Map<string, {id: string, title: string, shellMode: string, proxyConfig: any, panel: TerminalPanel, hostEl: HTMLElement, keyBar?: HTMLElement, keysBtn?: HTMLElement}>} */
 const openTerminals = new Map();
 let activeTerminalId = null;
+
+const isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches || /Android/i.test(navigator.userAgent);
+const savedTermKeysPref = localStorage.getItem('geko_term_keys_visible');
+let termKeysVisible = savedTermKeysPref !== null ? savedTermKeysPref === 'true' : isTouchDevice;
+
+function setTermKeysVisible(visible) {
+  termKeysVisible = visible;
+  localStorage.setItem('geko_term_keys_visible', String(visible));
+  $('term-keys')?.classList.toggle('visible', visible);
+  $('btn-term-keys')?.classList.toggle('active', visible);
+  for (const t of openTerminals.values()) {
+    t.keyBar?.classList.toggle('visible', visible);
+    t.keysBtn?.classList.toggle('active', visible);
+    t.panel?.fit();
+  }
+  if (typeof terminal !== 'undefined' && terminal?.fit) {
+    terminal.fit();
+  }
+}
+
+function toggleTermKeys() {
+  setTermKeysVisible(!termKeysVisible);
+}
 
 async function promptOpenTerminalTab() {
   const res = await showOpenTerminalTabDialog();
@@ -425,7 +448,58 @@ async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null } = {}
   pane.id = `editor-term-${termId}`;
   hostContainer.appendChild(pane);
 
-  const termPanel = new TerminalPanel(pane, null);
+  // Terminal tab header
+  const header = document.createElement('div');
+  header.className = 'editor-term-header';
+
+  const titleWrap = document.createElement('span');
+  titleWrap.className = 'editor-term-title';
+  titleWrap.innerHTML = `${proxyConfig ? SVG_ICONS.shield : SVG_ICONS.terminal} <span>${title}</span>`;
+  header.appendChild(titleWrap);
+
+  const badge = document.createElement('span');
+  badge.className = 'editor-term-badge';
+  badge.textContent = shellMode;
+  header.appendChild(badge);
+
+  const spacer = document.createElement('span');
+  spacer.className = 'spacer';
+  header.appendChild(spacer);
+
+  const keysBtn = document.createElement('button');
+  keysBtn.className = 'icon-button' + (termKeysVisible ? ' active' : '');
+  keysBtn.title = 'Toggle on-screen keys';
+  keysBtn.innerHTML = SVG_ICONS.keyboard;
+  keysBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTermKeys();
+  });
+  header.appendChild(keysBtn);
+
+  const restartBtn = document.createElement('button');
+  restartBtn.className = 'icon-button';
+  restartBtn.title = 'Restart terminal';
+  restartBtn.innerHTML = SVG_ICONS.refresh;
+  restartBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const proxyOpts = proxyConfig ? { proxy_url: proxyConfig.proxy_url } : null;
+    termPanel.start(rootPath, shellMode, proxyOpts);
+  });
+  header.appendChild(restartBtn);
+
+  pane.appendChild(header);
+
+  // Terminal host
+  const termHost = document.createElement('div');
+  termHost.className = 'terminal-host editor-term-host';
+  pane.appendChild(termHost);
+
+  // On-screen helper keys
+  const keyBar = document.createElement('div');
+  keyBar.className = 'term-keys' + (termKeysVisible ? ' visible' : '');
+  pane.appendChild(keyBar);
+
+  const termPanel = new TerminalPanel(termHost, keyBar);
 
   const record = {
     id: termId,
@@ -434,6 +508,8 @@ async function openTerminalTab({ shellMode = 'alpine', proxyConfig = null } = {}
     proxyConfig,
     panel: termPanel,
     hostEl: pane,
+    keyBar,
+    keysBtn,
   };
   openTerminals.set(termId, record);
 
@@ -2011,11 +2087,10 @@ api.onLinuxEnvError(async (payload) => {
   await updateLinuxEnvUI();
 });
 
-const isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-$('term-keys').classList.toggle('visible', isTouchDevice);
-$('btn-term-keys').addEventListener('click', () => {
-  $('term-keys').classList.toggle('visible');
-  terminal.fit();
+$('term-keys')?.classList.toggle('visible', termKeysVisible);
+$('btn-term-keys')?.classList.toggle('active', termKeysVisible);
+$('btn-term-keys')?.addEventListener('click', () => {
+  toggleTermKeys();
 });
 
 // ── Keyboard ──

@@ -135,7 +135,14 @@ export class TerminalPanel {
       const key = document.createElement('button');
       key.className = 'term-key';
       key.textContent = label;
-      key.addEventListener('click', () => {
+      key.setAttribute('type', 'button');
+      key.setAttribute('tabindex', '-1');
+      key.addEventListener('pointerdown', (e) => {
+        // Prevent button from stealing focus from xterm textarea on mobile/touch
+        e.preventDefault();
+      });
+      key.addEventListener('click', (e) => {
+        e.preventDefault();
         if (sequence === null) {
           this.ctrlSticky = !this.ctrlSticky;
           key.classList.toggle('sticky', this.ctrlSticky);

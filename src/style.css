@@ -2630,9 +2630,66 @@ button.tool.primary:hover {
   overflow: hidden;
 }
 
+.editor-term-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: #181818;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+  height: 32px;
+  box-sizing: border-box;
+}
+
+.editor-term-header .spacer {
+  flex: 1;
+}
+
+.editor-term-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.editor-term-title svg {
+  color: var(--accent);
+}
+
+.editor-term-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #25282e;
+  border: 1px solid var(--border);
+  color: #a0a0a0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.editor-term-host {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 4px 6px;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: #1e1e1e;
+}
+
 .editor-term-pane .xterm {
   height: 100%;
-  padding: 8px 12px;
+}
+
+.editor-term-pane .term-keys {
+  border-top: 1px solid var(--border);
+  background: #141414;
 }
 
 .tab.term-tab {
