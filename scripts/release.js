@@ -30,6 +30,7 @@ const rootDir = path.resolve(__dirname, '..');
 
 const args = process.argv.slice(2);
 const skipApk = args.includes('--no-apk') || args.includes('--skip-apk');
+const shouldPublish = args.includes('--publish');
 const versionArg = args.find((a) => !a.startsWith('--'));
 
 console.log('\n\x1b[1;35m================================================\x1b[0m');
@@ -41,7 +42,8 @@ function step(num, total, name) {
   console.log('\x1b[90m' + '─'.repeat(45) + '\x1b[0m');
 }
 
-const totalSteps = skipApk ? 5 : 6;
+let totalSteps = skipApk ? 5 : 6;
+if (shouldPublish) totalSteps++;
 let currentStep = 1;
 
 // 1. Version Bump (if requested)
@@ -83,7 +85,13 @@ if (!skipApk) {
   execSync('bun scripts/build-apk.js', { cwd: rootDir, stdio: 'inherit' });
 }
 
+// 7. Publish to GitHub (if requested)
+if (shouldPublish) {
+  step(currentStep++, totalSteps, 'Publishing Release to GitHub & Uploading Assets...');
+  execSync('bun scripts/publish-release.js', { cwd: rootDir, stdio: 'inherit' });
+}
+
 console.log('\n\x1b[1;32m================================================\x1b[0m');
-console.log(`\x1b[1;32m  ✔ RELEASE v${pkg.version} SUCCESSFULLY CREATED!       \x1b[0m`);
+console.log(`\x1b[1;32m  ✔ RELEASE v${pkg.version} COMPLETED SUCCESSFULLY!       \x1b[0m`);
 console.log('\x1b[1;32m================================================\x1b[0m\n');
 console.log('Ready for deployment and distribution.');

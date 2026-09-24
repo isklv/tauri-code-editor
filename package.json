@@ -1,6 +1,6 @@
 {
   "name": "geko",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,7 +22,9 @@
     "build:apk": "bun scripts/build-apk.js",
     "build:apk:universal": "bun scripts/build-apk.js --universal",
     "version": "bun scripts/version.js",
-    "release": "bun scripts/release.js"
+    "release": "bun scripts/release.js",
+    "release:publish": "bun scripts/publish-release.js",
+    "release:full": "bun scripts/release.js --publish"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
