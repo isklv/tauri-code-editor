@@ -10,10 +10,19 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml && vite build",
+    "test:backend": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "check:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
+    "check:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "check:security": "node scripts/security-check.js",
+    "check:all": "node scripts/security-check.js && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml && vite build",
     "android:dev": "tauri android dev",
-    "android:build": "tauri android build --apk --target aarch64",
-    "android:build:all": "tauri android build --apk",
-    "version": "node scripts/version.js"
+    "android:build": "node scripts/build-apk.js",
+    "android:build:universal": "node scripts/build-apk.js --universal",
+    "build:apk": "node scripts/build-apk.js",
+    "build:apk:universal": "node scripts/build-apk.js --universal",
+    "version": "node scripts/version.js",
+    "release": "node scripts/release.js"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
